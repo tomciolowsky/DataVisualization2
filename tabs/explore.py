@@ -83,45 +83,29 @@ def _multi_options(values: pd.Series) -> list[dict[str, str]]:
 
 
 def _load_games() -> pd.DataFrame:
-    usecols = [
-        "Name", "Release date", "Estimated owners", "Peak CCU",
-        "Price", "Metacritic score", "User score",
-        "Positive", "Negative", "Categories", "Genres", "Tags",
-        "mds_x", "mds_y", "mds_cosine_x", "mds_cosine_y",
-        "Required age", "Discount", "DLC count", "Achievements",
-        "Recommendations", "Average playtime forever", "Average playtime two weeks",
-        "Median playtime forever", "Median playtime two weeks",
-    ]
-    frame = pd.read_csv(DATA_PATH, usecols=usecols, low_memory=False)
-
-    frame["Release date"] = pd.to_datetime(frame["Release date"], errors="coerce")
-    for col in [
-        "Peak CCU", "Price", "Metacritic score", "User score", "Positive", "Negative",
-        "mds_x", "mds_y", "mds_cosine_x", "mds_cosine_y",
-        "Required age", "Discount", "DLC count", "Achievements",
-        "Recommendations", "Average playtime forever", "Average playtime two weeks",
-        "Median playtime forever", "Median playtime two weeks",
-    ]:
-        frame[col] = pd.to_numeric(frame[col], errors="coerce")
-
-    bounds = frame["Estimated owners"].fillna("").astype(str).str.extract(
-        r"(?P<lower>\d+)\s*-\s*(?P<upper>\d+)"
-    )
-    frame["Owners lower"] = pd.to_numeric(bounds["lower"], errors="coerce")
-    frame["Owners upper"] = pd.to_numeric(bounds["upper"], errors="coerce")
-    frame["Owner midpoint"] = (frame["Owners lower"] + frame["Owners upper"]) / 2.0
-    frame["Income"] = frame["Owner midpoint"].fillna(0) * frame["Price"].fillna(0)
-
-    for col in ["Genres", "Categories", "Tags"]:
-        frame[f"_{col.lower()}_tokens"] = frame[col].fillna("").astype(str).map(_tokenize)
-
-    frame["Positive ratings"] = frame["Positive"] * 100
-    frame["Negative ratings"] = frame["Negative"] * 100
-
+    parquet_path = Path(__file__).resolve().parents[1] / "data" / "explore_optimized.parquet"
+    frame = pd.read_parquet(parquet_path)
     return frame
 
 
 GAMES = _load_games()
+
+
+def _build_available_columns() -> list[str]:
+    base_cols = [
+        "Name", "Release date", "Estimated owners", "Peak CCU", "Price",
+        "Genres", "Categories", "Tags", "User score", "Metacritic score",
+        "Positive ratings", "Negative ratings", "Positive (raw)", "Negative (raw)"
+    ]
+    other_cols = []
+    for c in GAMES.columns:
+        if c not in base_cols and not c.startswith("_"):
+            other_cols.append(c)
+    other_cols.sort()
+    return base_cols + other_cols
+
+
+TABLE_AVAILABLE_COLUMNS = _build_available_columns()
 
 
 def _get_robust_color_values(series: pd.Series) -> tuple[pd.Series, float, float]:
@@ -305,21 +289,40 @@ def _fmt(value, fmt: str, fallback: str = "") -> str:
 def _table_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Format a raw dataframe slice into display-ready strings for the DataTable."""
     t = frame.copy()
-    t["Release date"]    = t["Release date"].dt.strftime("%Y-%m-%d").fillna("")
-    t["Price"]           = t["Price"].map(lambda v: _fmt(v, ".2f"))
-    t["User score"]      = t["User score"].map(lambda v: _fmt(v, ".0f"))
-    t["Metacritic score"]= t["Metacritic score"].map(lambda v: _fmt(v, ".0f"))
-    t["Positive ratings"]= t["Positive ratings"].map(lambda v: _fmt(v, ".1f"))
-    t["Negative ratings"]= t["Negative ratings"].map(lambda v: _fmt(v, ".1f"))
-    t["Peak CCU"]        = t["Peak CCU"].map(lambda v: "" if pd.isna(v) else f"{int(v):,}")
-    t["Estimated owners"]= t["Estimated owners"].fillna("")
-    t["Genres"]          = t["Genres"].fillna("")
-    t["Categories"]      = t["Categories"].fillna("")
-    t["Tags"]            = t["Tags"].fillna("")
-    # Positive / Negative are fractions [0,1] — show the raw decimal value
-    t["Positive (raw)"]  = t["Positive"].map(lambda v: _fmt(v, ".4f"))
-    t["Negative (raw)"]  = t["Negative"].map(lambda v: _fmt(v, ".4f"))
-    return t[list(TABLE_AVAILABLE_COLUMNS)]
+    
+    if "Positive" in t.columns and "Positive (raw)" not in t.columns:
+        t["Positive (raw)"] = t["Positive"].map(lambda v: _fmt(v, ".4f"))
+    if "Negative" in t.columns and "Negative (raw)" not in t.columns:
+        t["Negative (raw)"] = t["Negative"].map(lambda v: _fmt(v, ".4f"))
+
+    if "Release date" in t.columns:
+        t["Release date"] = t["Release date"].dt.strftime("%Y-%m-%d").fillna("")
+    if "Price" in t.columns:
+        t["Price"] = t["Price"].map(lambda v: _fmt(v, ".2f"))
+    if "User score" in t.columns:
+        t["User score"] = t["User score"].map(lambda v: _fmt(v, ".0f"))
+    if "Metacritic score" in t.columns:
+        t["Metacritic score"] = t["Metacritic score"].map(lambda v: _fmt(v, ".0f"))
+    if "Positive ratings" in t.columns:
+        t["Positive ratings"] = t["Positive ratings"].map(lambda v: _fmt(v, ".1f"))
+    if "Negative ratings" in t.columns:
+        t["Negative ratings"] = t["Negative ratings"].map(lambda v: _fmt(v, ".1f"))
+    if "Peak CCU" in t.columns:
+        t["Peak CCU"] = t["Peak CCU"].map(lambda v: "" if pd.isna(v) else f"{int(v):,}")
+    
+    formatted_cols = {"Release date", "Price", "User score", "Metacritic score", "Positive ratings", "Negative ratings", "Peak CCU", "Positive (raw)", "Negative (raw)"}
+    
+    for col in t.columns:
+        if col in formatted_cols:
+            continue
+        
+        if pd.api.types.is_numeric_dtype(t[col]):
+            t[col] = t[col].map(lambda v: "" if pd.isna(v) else (f"{int(v)}" if float(v).is_integer() else f"{v}"))
+        else:
+            t[col] = t[col].fillna("")
+            
+    cols_to_return = [c for c in TABLE_AVAILABLE_COLUMNS if c in t.columns]
+    return t[cols_to_return]
 
 
 def _table_style(active_cell, selected_game_name: str | None = None, page_data: list[dict] | None = None) -> list[dict]:
@@ -611,17 +614,15 @@ def _histogram_figure(frame: pd.DataFrame, filter_signature: str) -> go.Figure:
             autobinx=False,
             xbins={"start": visible_min, "end": visible_max, "size": bin_size},
             marker={"color": ACCENT_COLOR, "line": {"color": "#1d4ed8", "width": 0.5}},
-            hovertemplate="Peak CCU: %{x}<br>Count: %{y}<extra></extra>",
+            hovertemplate="Distribution Of Users Highest Activity: %{x}<br>Count: %{y}<extra></extra>",
         )
     ])
     fig.update_layout(
         template="plotly_white",
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
-        margin={"l": 42, "r": 18, "t": 26, "b": 42},
-        title={"text": "Peak CCU Histogram", "x": 0, "xanchor": "left",
-               "font": {"size": 18, "color": TEXT_PRIMARY}},
-        xaxis={"title": "Peak CCU", "uirevision": filter_signature},
+        margin={"l": 42, "r": 18, "t": 10, "b": 42},
+        xaxis={"title": "Distribution Of Users Highest Activity", "uirevision": filter_signature},
         yaxis={"title": "Games", "autorange": True, "uirevision": y_ui_revision},
         bargap=0.05,
         uirevision=filter_signature,
@@ -767,6 +768,7 @@ layout = html.Div(
                                _build_range_inputs("explore-positive", 0, POSITIVE_MAX, step=0.1),
                                "Values are shown as percentages from 0 to 100."),
                     ],
+                    id="explore-filters-panel",
                     style=PANEL_STYLE,
                 ),
 
@@ -774,10 +776,16 @@ layout = html.Div(
                     [
                         html.Div(
                             [
+                                html.Div(
+                                    [
+                                        html.Div("Distribution Of Users Highest Activity", style=SECTION_TITLE_STYLE),
+                                    ],
+                                    style=PLOT_CARD_HEADER_STYLE,
+                                ),
                                 dcc.Graph(
                                     id="explore-peak-ccu-histogram",
-                                    figure=_empty_figure("Apply filters to see the peak CCU distribution."),
-                                    style=EXPLORE_GRAPH_STYLE,
+                                    figure=_empty_figure("Apply filters to see the distribution of users highest activity."),
+                                    style={**EXPLORE_GRAPH_STYLE, "marginTop": "1rem"},
                                     config={"displayModeBar": True, "responsive": True, "scrollZoom": True},
                                 ),
                             ],
@@ -787,7 +795,8 @@ layout = html.Div(
                         html.Div(
                             [
                                 html.Div(
-                                    [
+                                    id="explore-table-tour-target",
+                                    children=[
                                         html.Div("Matching Games", style=SECTION_TITLE_STYLE),
                                         dcc.Dropdown(
                                             id="explore-table-columns",
@@ -837,9 +846,10 @@ layout = html.Div(
             [
                 html.Div(
                     [
-                        html.Div("Scatter Plot", style=SECTION_TITLE_STYLE),
+                        html.Div("Game Similarity", style=SECTION_TITLE_STYLE),
                         html.Div(
-                            [
+                            id="explore-distance-buttons",
+                            children=[
                                 html.Span("Distance Method: ", style={**LABEL_STYLE, "marginRight": "8px"}),
                                 html.Button("Euclidean", id="explore-scatter-dist-euclidean", n_clicks=0, style=BUTTON_ACTIVE_STYLE),
                                 html.Button("Cosine similarity", id="explore-scatter-dist-cosine", n_clicks=0, style=BUTTON_BASE_STYLE),
@@ -870,7 +880,7 @@ layout = html.Div(
                 html.Div(
                     dcc.Graph(
                         id="explore-scatter-plot",
-                        figure=_empty_figure("Scatter plot is empty for now.", height=400),
+                        figure=_empty_figure("Game Similarity plot is empty for now.", height=600),
                         config={"displayModeBar": True, "responsive": True, "scrollZoom": True},
                         style=PLOT_CHART_STYLE,
                     ),
@@ -900,6 +910,7 @@ layout = html.Div(
                     ),
                 ),
             ],
+            id="explore-sentiment-graphs",
             style=CHART_PLOTS_GRID_STYLE,
         ),
     ]
@@ -1108,7 +1119,7 @@ def register_callbacks(app):
         num_visible = len(visible_df)
 
         if plot_df.empty:
-            scatter_fig = _empty_figure("No games match the current filters.", height=400)
+            scatter_fig = _empty_figure("No games match the current filters.", height=600)
         else:
             color_col = COLOR_COLUMN_MAP.get(color_by, "Price")
             
@@ -1169,7 +1180,7 @@ def register_callbacks(app):
                         mode="markers",
                         marker={
                             "color": clipped_color,
-                            "colorscale": "Viridis",
+                            "colorscale": "Plasma",
                             "cmin": cmin,
                             "cmax": cmax,
                             "showscale": True,
@@ -1214,7 +1225,7 @@ def register_callbacks(app):
                         mode="markers",
                         marker={
                             "color": clipped_color,
-                            "colorscale": "Viridis",
+                            "colorscale": "Plasma",
                             "cmin": cmin,
                             "cmax": cmax,
                             "showscale": True,
@@ -1254,7 +1265,7 @@ def register_callbacks(app):
                 paper_bgcolor="#ffffff",
                 plot_bgcolor="#ffffff",
                 margin={"l": 40, "r": 20, "t": 20, "b": 40},
-                height=400,
+                height=600,
                 xaxis={"title": "MDS X" if dist_method == "euclidean" else "MDS Cosine X", "gridcolor": "#e2e8f0"},
                 yaxis={"title": "MDS Y" if dist_method == "euclidean" else "MDS Cosine Y", "gridcolor": "#e2e8f0"},
                 uirevision="scatter-plot-revision",
