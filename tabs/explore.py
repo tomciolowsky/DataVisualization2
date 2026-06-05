@@ -83,24 +83,8 @@ def _multi_options(values: pd.Series) -> list[dict[str, str]]:
 
 
 def _load_games() -> pd.DataFrame:
-    frame = pd.read_csv(DATA_PATH, low_memory=False)
-
-    frame["Release date"] = pd.to_datetime(frame["Release date"], errors="coerce")
-
-    # The dataset script precomputes Owner midpoint, Estimated_Income, Positive_Pct, Negative_Pct
-    bounds = frame["Estimated owners"].fillna("").astype(str).str.extract(r"(?P<lower>\d+)\s*-\s*(?P<upper>\d+)")
-    frame["Owners lower"] = pd.to_numeric(bounds["lower"], errors="coerce")
-    frame["Owners upper"] = pd.to_numeric(bounds["upper"], errors="coerce")
-
-    # Map to the local names expected by the explore tab.
-    frame["Income"] = frame.get("Estimated_Income", 0)
-    
-    for col in ["Genres", "Categories", "Tags"]:
-        frame[f"_{col.lower()}_tokens"] = frame[col].fillna("").astype(str).map(_tokenize)
-
-    frame["Positive ratings"] = frame.get("Positive_Pct", 0)
-    frame["Negative ratings"] = frame.get("Negative_Pct", 0)
-
+    parquet_path = Path(__file__).resolve().parents[1] / "data" / "explore_optimized.parquet"
+    frame = pd.read_parquet(parquet_path)
     return frame
 
 
@@ -108,13 +92,11 @@ GAMES = _load_games()
 
 
 def _build_available_columns() -> list[str]:
-    # Start with original ones to preserve order
     base_cols = [
         "Name", "Release date", "Estimated owners", "Peak CCU", "Price",
         "Genres", "Categories", "Tags", "User score", "Metacritic score",
         "Positive ratings", "Negative ratings", "Positive (raw)", "Negative (raw)"
     ]
-    # Find all other columns in GAMES
     other_cols = []
     for c in GAMES.columns:
         if c not in base_cols and not c.startswith("_"):
@@ -308,13 +290,11 @@ def _table_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Format a raw dataframe slice into display-ready strings for the DataTable."""
     t = frame.copy()
     
-    # 1. Add custom derived columns if not present
     if "Positive" in t.columns and "Positive (raw)" not in t.columns:
         t["Positive (raw)"] = t["Positive"].map(lambda v: _fmt(v, ".4f"))
     if "Negative" in t.columns and "Negative (raw)" not in t.columns:
         t["Negative (raw)"] = t["Negative"].map(lambda v: _fmt(v, ".4f"))
 
-    # 2. Format specific columns to pretty strings
     if "Release date" in t.columns:
         t["Release date"] = t["Release date"].dt.strftime("%Y-%m-%d").fillna("")
     if "Price" in t.columns:
@@ -330,14 +310,12 @@ def _table_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if "Peak CCU" in t.columns:
         t["Peak CCU"] = t["Peak CCU"].map(lambda v: "" if pd.isna(v) else f"{int(v):,}")
     
-    # 3. For any other column not formatted above, fill NaNs and format nicely
     formatted_cols = {"Release date", "Price", "User score", "Metacritic score", "Positive ratings", "Negative ratings", "Peak CCU", "Positive (raw)", "Negative (raw)"}
     
     for col in t.columns:
         if col in formatted_cols:
             continue
         
-        # If numeric
         if pd.api.types.is_numeric_dtype(t[col]):
             t[col] = t[col].map(lambda v: "" if pd.isna(v) else (f"{int(v)}" if float(v).is_integer() else f"{v}"))
         else:
