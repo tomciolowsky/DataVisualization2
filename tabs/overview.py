@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -27,29 +28,18 @@ from styles import (
 )
 
 
-def _load_games() -> pd.DataFrame:
-    DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "games.csv"
-    games = pd.read_csv(DATA_PATH, index_col=0)
-    games["Release date"] = pd.to_datetime(games["Release date"], errors="coerce")
-    return games
+def _load_precomputed():
+    path = Path(__file__).resolve().parents[1] / "data" / "overview_precomputed.json"
+    with open(path, "r") as f:
+        return json.load(f)
 
-
-games = _load_games()
-
-genre_values = sorted(
-    {
-        genre.strip()
-        for genres in games["Genres"].dropna().astype(str)
-        for genre in genres.split(",")
-        if genre.strip()
-    }
-)
-
+PRECOMPUTED = _load_precomputed()
+genre_values = sorted([g for g in PRECOMPUTED["metrics"].keys() if g != "All genres"])
 
 title = 'Overview'
 desc = 'A high-level view of the gaming market.'
 
-END_RANGE = games['Release date'].max()
+END_RANGE = pd.to_datetime("2026-01-31")
 DEFAULT_GENRE = "All genres"
 DEFAULT_PERIOD = "year"
 DEFAULT_RANGE = "last-6-years"
@@ -195,7 +185,7 @@ def _period_tickformatstops(period):
 
 
 def _range_start_date(range_key):
-    history_start = games["Release date"].min().normalize()
+    history_start = pd.to_datetime("1997-06-26")
     end_date = END_RANGE.normalize()
     if range_key == "last-6-months":
         return (end_date - pd.DateOffset(months=6)).normalize()
@@ -223,31 +213,22 @@ def _range_label(range_key):
     }[range_key]
 
 
-def _bucket_market_value(df, period, start_date, end_date):
-    if df.empty:
-        return pd.DataFrame(columns=["Release date", "Market value"])
-
-    working = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)]
-    working["Market value"] = working["Owner midpoint"].fillna(0) * working["Price"].fillna(0)
-    working["Release date"] = working["Release date"].dt.to_period(_period_frequency(period)).dt.to_timestamp()
-    grouped = (
-        working.groupby("Release date")
-        ["Market value"]
-        .sum()
-        .reset_index()
-    )
-    return grouped[grouped["Market value"] > 0]
+def _bucket_market_value(selected_genre, period, start_date, end_date):
+    data = PRECOMPUTED["timeseries"][period].get(selected_genre, {"Release date": [], "Market value": []})
+    df = pd.DataFrame(data)
+    if not df.empty:
+        df["Release date"] = pd.to_datetime(df["Release date"])
+        df = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)]
+    return df
 
 
-def _bucket_purchased_copies(df, period, start_date, end_date):
-    if df.empty:
-        return pd.DataFrame(columns=["Release date", "Purchased copies"])
-
-    working = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)].copy()
-    working["Purchased copies"] = working["Owner midpoint"].fillna(0)
-    working["Release date"] = working["Release date"].dt.to_period(_period_frequency(period)).dt.to_timestamp()
-    grouped = working.groupby("Release date")["Purchased copies"].sum().reset_index()
-    return grouped[grouped["Purchased copies"] > 0]
+def _bucket_purchased_copies(selected_genre, period, start_date, end_date):
+    data = PRECOMPUTED["timeseries"][period].get(selected_genre, {"Release date": [], "Purchased copies": []})
+    df = pd.DataFrame(data)
+    if not df.empty:
+        df["Release date"] = pd.to_datetime(df["Release date"])
+        df = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)]
+    return df
 
 
 def _category_items(value):
@@ -263,11 +244,9 @@ def _get_xaxis_ticks(x_values, period, selected_range):
     if not x_values:
         return [], []
         
-    # If period is year, we always show years for all ticks
     if period == "year":
         return x_values, [t.strftime("%Y") for t in x_values]
         
-    # If period is quarter:
     if period == "quarter":
         if selected_range in ["last-6-months", "last-year"]:
             tick_text = []
@@ -276,22 +255,17 @@ def _get_xaxis_ticks(x_values, period, selected_range):
                 tick_text.append(f"Q{q} {t.strftime('%y')}")
             return x_values, tick_text
         else:
-            # Show years only: tick at Q1 (January)
             tickvals = [t for t in x_values if t.month == 1]
             if not tickvals:
                 tickvals = [x_values[0]]
             return tickvals, [t.strftime("%Y") for t in tickvals]
             
-    # If period is month:
     if period == "month":
         if selected_range in ["last-6-months", "last-year"]:
-            # Show Jan, Feb, etc. for every month
             return x_values, [t.strftime("%b") for t in x_values]
         else:
-            # Show years only: tick at January
             tickvals = [t for t in x_values if t.month == 1]
             if not tickvals:
-                # Fallback to first month of each year
                 years_seen = set()
                 tickvals = []
                 for t in x_values:
@@ -387,33 +361,10 @@ def _build_pie_legend(labels, values, colors):
     )
 
 
-def _build_game_type_pie_figure(df):
-    category_series = df["Categories"].fillna("").astype(str)
-    singleplayer_terms = {"Single-player"}
-    multiplayer_terms = {
-        "Multi-player",
-        "PvP",
-        "Online PvP",
-        "Remote Play Together",
-        "Cross-Platform Multiplayer",
-        "MMO",
-        "LAN PvP",
-    }
-    coop_terms = {
-        "Co-op",
-        "Remote Play Together",
-        "Online Co-op",
-        "Shared/Split Screen Co-op",
-        "LAN Co-op",
-    }
-
-    values = [
-        int(category_series.apply(lambda value: _has_any_category(value, singleplayer_terms)).astype(bool).sum()),
-        int(category_series.apply(lambda value: _has_any_category(value, multiplayer_terms)).astype(bool).sum()),
-        int(category_series.apply(lambda value: _has_any_category(value, coop_terms)).astype(bool).sum()),
-    ]
+def _build_game_type_pie_figure(selected_genre, year):
+    pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
+    values = pies.get("game_type", [0, 0, 0])
     labels = ["Singleplayer", "Multiplayer", "Co-op"]
-    # Consistent palette: Blue, Green, Yellow
     return _build_pie_figure(
         _legend_labels_with_percentages(labels, values),
         values,
@@ -422,19 +373,10 @@ def _build_game_type_pie_figure(df):
     )
 
 
-def _build_platform_pie_figure(df):
-    windows = df["Windows"].fillna(False).astype(bool)
-    linux = df["Linux"].fillna(False).astype(bool)
-    mac = df["Mac"].fillna(False).astype(bool)
-
-    values = [
-        int((windows & ~linux & ~mac).sum()),
-        int((windows & linux & mac).sum()),
-        int((windows & linux & ~mac).sum()),
-        int((windows & ~linux & mac).sum()),
-    ]
+def _build_platform_pie_figure(selected_genre, year):
+    pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
+    values = pies.get("platform", [0, 0, 0, 0])
     labels = ["Windows only", "Windows + Linux + Mac", "Windows + Linux", "Windows + Mac"]
-    # Consistent palette: Blue, Purple, Green, Yellow
     return _build_pie_figure(
         _legend_labels_with_percentages(labels, values),
         values,
@@ -443,16 +385,10 @@ def _build_platform_pie_figure(df):
     )
 
 
-def _build_controller_support_pie_figure(df):
-    supported_terms = {
-        "Full controller support",
-        "Partial controller support",
-        "Tracked Controller Support",
-    }
-    supported = df["Categories"].fillna("").astype(str).apply(lambda value: _has_any_category(value, supported_terms)).astype(bool)
-    values = [int(supported.sum()), int((~supported).sum())]
+def _build_controller_support_pie_figure(selected_genre, year):
+    pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
+    values = pies.get("controller", [0, 0])
     labels = ["Yes", "No"]
-    # Consistent palette: Yes=Blue, No=Gray
     return _build_pie_figure(
         _legend_labels_with_percentages(labels, values),
         values,
@@ -461,12 +397,10 @@ def _build_controller_support_pie_figure(df):
     )
 
 
-def _build_vr_support_pie_figure(df):
-    supported_terms = {"VR Only", "VR Supported", "VR Support", "SteamVR Collectibles"}
-    supported = df["Categories"].fillna("").astype(str).apply(lambda value: _has_any_category(value, supported_terms)).astype(bool)
-    values = [int(supported.sum()), int((~supported).sum())]
+def _build_vr_support_pie_figure(selected_genre, year):
+    pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
+    values = pies.get("vr", [0, 0])
     labels = ["Yes", "No"]
-    # Consistent palette: Yes=Blue, No=Gray
     return _build_pie_figure(
         _legend_labels_with_percentages(labels, values),
         values,
@@ -475,46 +409,34 @@ def _build_vr_support_pie_figure(df):
     )
 
 
-def _genre_market_value_buckets(df, period, start_date, end_date):
-    if df.empty:
-        return pd.DataFrame(columns=["Release date", "Genre", "Market value"])
-
-    working = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)]
-    genre_lists = working["Genres"].fillna("").astype(str).apply(
-        lambda value: [genre.strip() for genre in value.split(",") if genre.strip()]
-    )
-    working["Genre list"] = genre_lists
-    working["Genre count"] = genre_lists.apply(len)
-    working = working[working["Genre count"] > 0].explode("Genre list")
-    working["Release date"] = working["Release date"].dt.to_period(_period_frequency(period)).dt.to_timestamp()
-    working["Market value"] = (
-        working["Owner midpoint"].fillna(0) * working["Price"].fillna(0) / working["Genre count"]
-    )
-    grouped = working.groupby(["Release date", "Genre list"])["Market value"].sum().reset_index()
-    grouped.rename(columns={"Genre list": "Genre"}, inplace=True)
-    return grouped[grouped["Market value"] > 0]
+def _genre_market_value_buckets(selected_period, start_date, end_date):
+    rows = []
+    for genre, data in PRECOMPUTED["timeseries"][selected_period].items():
+        if genre == "All genres": continue
+        for d, v in zip(data["Release date"], data["Market value"]):
+            if v > 0: rows.append({"Release date": d, "Genre": genre, "Market value": v})
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["Release date"] = pd.to_datetime(df["Release date"])
+        df = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)]
+    return df
 
 
-def _genre_purchased_copies_buckets(df, period, start_date, end_date):
-    if df.empty:
-        return pd.DataFrame(columns=["Release date", "Genre", "Purchased copies"])
-
-    working = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)].copy()
-    genre_lists = working["Genres"].fillna("").astype(str).apply(
-        lambda value: [genre.strip() for genre in value.split(",") if genre.strip()]
-    )
-    working["Genre list"] = genre_lists
-    working["Genre count"] = genre_lists.apply(len)
-    working = working[working["Genre count"] > 0].explode("Genre list")
-    working["Release date"] = working["Release date"].dt.to_period(_period_frequency(period)).dt.to_timestamp()
-    working["Purchased copies"] = working["Owner midpoint"].fillna(0) / working["Genre count"]
-    grouped = working.groupby(["Release date", "Genre list"])["Purchased copies"].sum().reset_index()
-    grouped.rename(columns={"Genre list": "Genre"}, inplace=True)
-    return grouped[grouped["Purchased copies"] > 0]
+def _genre_purchased_copies_buckets(selected_period, start_date, end_date):
+    rows = []
+    for genre, data in PRECOMPUTED["timeseries"][selected_period].items():
+        if genre == "All genres": continue
+        for d, v in zip(data["Release date"], data["Purchased copies"]):
+            if v > 0: rows.append({"Release date": d, "Genre": genre, "Purchased copies": v})
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["Release date"] = pd.to_datetime(df["Release date"])
+        df = df[(df["Release date"] >= start_date) & (df["Release date"] < end_date)]
+    return df
 
 
-def _build_market_value_figure(df, period, selected_range, start_date, end_date):
-    grouped = _bucket_market_value(df, period, start_date, end_date)
+def _build_market_value_figure(selected_genre, period, selected_range, start_date, end_date):
+    grouped = _bucket_market_value(selected_genre, period, start_date, end_date)
     return timeseries_line_figure(
         grouped,
         period=period,
@@ -527,8 +449,8 @@ def _build_market_value_figure(df, period, selected_range, start_date, end_date)
     )
 
 
-def _build_purchased_copies_figure(df, period, selected_range, start_date, end_date):
-    grouped = _bucket_purchased_copies(df, period, start_date, end_date)
+def _build_purchased_copies_figure(selected_genre, period, selected_range, start_date, end_date):
+    grouped = _bucket_purchased_copies(selected_genre, period, start_date, end_date)
     return timeseries_line_figure(
         grouped,
         period=period,
@@ -592,8 +514,8 @@ def timeseries_line_figure(grouped, period, selected_range, y_col, title, yaxis_
     }
 
 
-def _build_relative_market_value_figure(df, period, selected_genre, selected_range, start_date, end_date):
-    grouped = _genre_market_value_buckets(df, period, start_date, end_date)
+def _build_relative_market_value_figure(period, selected_genre, selected_range, start_date, end_date):
+    grouped = _genre_market_value_buckets(period, start_date, end_date)
     return relative_barchart_figure(
         grouped,
         period=period,
@@ -607,8 +529,8 @@ def _build_relative_market_value_figure(df, period, selected_genre, selected_ran
     )
 
 
-def _build_relative_purchased_copies_figure(df, period, selected_genre, selected_range, start_date, end_date):
-    grouped = _genre_purchased_copies_buckets(df, period, start_date, end_date)
+def _build_relative_purchased_copies_figure(period, selected_genre, selected_range, start_date, end_date):
+    grouped = _genre_purchased_copies_buckets(period, start_date, end_date)
     return relative_barchart_figure(
         grouped,
         period=period,
@@ -634,7 +556,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
     selected_is_all = not selected_genre or selected_genre == DEFAULT_GENRE
     highlighted_genre = None if selected_is_all else selected_genre
 
-    # ── x-axis index ──────────────────────────────────────────────────────────
     if not grouped.empty:
         x_index = pd.period_range(
             start=grouped["Release date"].min().to_period(_period_frequency(period)),
@@ -646,7 +567,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
     x_values = x_index.to_pydatetime().tolist()
     n_x = len(x_values)
 
-    # ── Pivot: genre → value list aligned to x_index ──────────────────────────
     all_genres_in_data = grouped["Genre"].dropna().unique().tolist() if not grouped.empty else []
 
     pivot_data = {}
@@ -655,16 +575,15 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
             gf = grouped[grouped["Genre"] == genre]
             series = (
                 gf.set_index("Release date")
-                .reindex(x_index)        # reindex without fill_value to avoid dtype issues
+                .reindex(x_index)       
                 [value_col]
-                .fillna(0)               # fill missing periods with 0
+                .fillna(0)               
                 .astype(float)
             )
             pivot_data[genre] = series.tolist()
         else:
             pivot_data[genre] = []
 
-    # ── Stable colour map keyed on overall totals ──────────────────────────────
     overall_totals = {genre: sum(vals) for genre, vals in pivot_data.items()}
     sorted_genres_overall = sorted(overall_totals, key=lambda g: overall_totals[g], reverse=True)
 
@@ -673,12 +592,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
         for i, genre in enumerate(sorted_genres_overall)
     }
 
-    # ── Per-column base computation ────────────────────────────────────────────
-    # For each time-period column i, genres are sorted descending by their value in that column.
-    # Each genre's base[i] = cumulative sum of all genres with LARGER values at column i
-    # (they appear below it in the stack).
-    # Tiebreaker: overall total descending → genre with bigger lifetime total sits lower.
-    # When a genre is highlighted it is always pinned at the very bottom (base = 0).
     base_dict = {genre: [0.0] * n_x for genre in sorted_genres_overall}
 
     for i in range(n_x):
@@ -710,7 +623,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
                 base_dict[genre][i] = cumbase
                 cumbase += row.get(genre, 0.0)
 
-    # ── Build traces ────────────────────────────────────────────────────────────
     bar_traces = []
     line_traces = []
 
@@ -743,7 +655,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
         })
 
         if is_highlighted:
-            # Highlighted genre is always at base=0, so midpoint = y/2
             midpoint_values = [v / 2 for v in y_arr]
             line_traces.append({
                 "type": "scatter",
@@ -757,7 +668,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
                 "showlegend": False,
             })
 
-    # Line traces last so they render above bars
     traces = bar_traces + line_traces
 
     yaxis = {"title": yaxis_title, "separatethousands": True, "showgrid": True}
@@ -790,13 +700,6 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
     }
 
 
-def _filter_games(df, genre, start_date, end_date):
-    filtered = df
-    if genre and genre != DEFAULT_GENRE:
-        filtered = df[df["Genres"].fillna("").str.contains(genre, case=False, na=False)]
-
-    filtered = filtered[(filtered["Release date"] >= start_date) & (filtered["Release date"] < end_date)]
-    return filtered
 
 
 
@@ -857,51 +760,28 @@ def _build_metric_card(label, value_id, default_value):
 
 
 # TODO: Change this in the future because now this does not make, it should use the full data range and not thte part of it
-DEFAULT_PIE_YEAR = int(games["Release date"].dropna().dt.year.max())
+DEFAULT_PIE_YEAR = int(END_RANGE.year)
 
-default_start_date, default_end_date = _period_window(DEFAULT_PERIOD, END_RANGE)
-default_period_games = _filter_games(games, DEFAULT_GENRE, default_start_date, default_end_date)
-history_start_date = games["Release date"].min().normalize()
+history_start_date = pd.to_datetime("1997-06-26")
 default_range_start_date = _range_start_date(DEFAULT_RANGE)
+
 default_market_value_figure = _build_market_value_figure(
-    _filter_games(games, DEFAULT_GENRE, default_range_start_date, END_RANGE),
-    DEFAULT_PERIOD,
-    DEFAULT_RANGE,
-    default_range_start_date,
-    END_RANGE,
+    DEFAULT_GENRE, DEFAULT_PERIOD, DEFAULT_RANGE, default_range_start_date, END_RANGE
 )
 default_relative_market_value_figure = _build_relative_market_value_figure(
-    _filter_games(games, DEFAULT_GENRE, default_range_start_date, END_RANGE),
-    DEFAULT_PERIOD,
-    DEFAULT_GENRE,
-    DEFAULT_RANGE,
-    default_range_start_date,
-    END_RANGE,
+    DEFAULT_PERIOD, DEFAULT_GENRE, DEFAULT_RANGE, default_range_start_date, END_RANGE
 )
 default_purchased_copies_figure = _build_purchased_copies_figure(
-    _filter_games(games, DEFAULT_GENRE, default_range_start_date, END_RANGE),
-    DEFAULT_PERIOD,
-    DEFAULT_RANGE,
-    default_range_start_date,
-    END_RANGE,
+    DEFAULT_GENRE, DEFAULT_PERIOD, DEFAULT_RANGE, default_range_start_date, END_RANGE
 )
 default_relative_purchased_copies_figure = _build_relative_purchased_copies_figure(
-    _filter_games(games, DEFAULT_GENRE, default_range_start_date, END_RANGE),
-    DEFAULT_PERIOD,
-    DEFAULT_GENRE,
-    DEFAULT_RANGE,
-    default_range_start_date,
-    END_RANGE,
+    DEFAULT_PERIOD, DEFAULT_GENRE, DEFAULT_RANGE, default_range_start_date, END_RANGE
 )
 
-default_pie_start = pd.to_datetime(f"{DEFAULT_PIE_YEAR}-01-01")
-default_pie_end = pd.to_datetime(f"{DEFAULT_PIE_YEAR + 1}-01-01")
-default_pie_games = _filter_games(games, DEFAULT_GENRE, default_pie_start, default_pie_end)
-
-default_game_type_pie_figure = _build_game_type_pie_figure(default_pie_games)
-default_platform_pie_figure = _build_platform_pie_figure(default_pie_games)
-default_controller_pie_figure = _build_controller_support_pie_figure(default_pie_games)
-default_vr_pie_figure = _build_vr_support_pie_figure(default_pie_games)
+default_game_type_pie_figure = _build_game_type_pie_figure(DEFAULT_GENRE, DEFAULT_PIE_YEAR)
+default_platform_pie_figure = _build_platform_pie_figure(DEFAULT_GENRE, DEFAULT_PIE_YEAR)
+default_controller_pie_figure = _build_controller_support_pie_figure(DEFAULT_GENRE, DEFAULT_PIE_YEAR)
+default_vr_pie_figure = _build_vr_support_pie_figure(DEFAULT_GENRE, DEFAULT_PIE_YEAR)
 # END TODO
 
 
@@ -1055,7 +935,7 @@ layout = html.Div(
                                 ),
                                 dcc.Dropdown(
                                     id="overview-pie-year-dropdown",
-                                    options=[{"label": str(y), "value": y} for y in sorted(games["Release date"].dropna().dt.year.unique().astype(int), reverse=True) if 1997 <= y <= 2026],
+                                    options=[{"label": str(y), "value": y} for y in range(2026, 1996, -1)],
                                     value=DEFAULT_PIE_YEAR,
                                     clearable=False,
                                     searchable=False,
@@ -1069,7 +949,6 @@ layout = html.Div(
                 ),
                 html.Div(
                     [
-                        # Game Type pie
                         html.Div(
                             [
                                 dcc.Graph(
@@ -1089,7 +968,6 @@ layout = html.Div(
                             ],
                             style=PIE_CARD_STYLE,
                         ),
-                        # Platform pie
                         html.Div(
                             [
                                 dcc.Graph(
@@ -1109,7 +987,6 @@ layout = html.Div(
                             ],
                             style=PIE_CARD_STYLE,
                         ),
-                        # Controller Support pie
                         html.Div(
                             [
                                 dcc.Graph(
@@ -1251,135 +1128,72 @@ def register_callbacks(app):
         Input("overview-pie-year-dropdown", "value"),
     )
     def update_metrics(selected_genre, selected_period, selected_range, selected_pie_year):
-        start_date, end_date = _period_window(selected_period, END_RANGE)
-        filtered = _filter_games(games, selected_genre, start_date, end_date)
         range_start_date = _range_start_date(selected_range)
+
         market_value_figure = _build_market_value_figure(
-            _filter_games(games, selected_genre, range_start_date, END_RANGE),
-            selected_period,
-            selected_range,
-            range_start_date,
-            END_RANGE,
+            selected_genre, selected_period, selected_range, range_start_date, END_RANGE
         )
         relative_market_value_figure = _build_relative_market_value_figure(
-            _filter_games(games, DEFAULT_GENRE, range_start_date, END_RANGE),
-            selected_period,
-            selected_genre,
-            selected_range,
-            range_start_date,
-            END_RANGE,
+            selected_period, selected_genre, selected_range, range_start_date, END_RANGE
         )
         purchased_copies_figure = _build_purchased_copies_figure(
-            _filter_games(games, selected_genre, range_start_date, END_RANGE),
-            selected_period,
-            selected_range,
-            range_start_date,
-            END_RANGE,
+            selected_genre, selected_period, selected_range, range_start_date, END_RANGE
         )
         relative_purchased_copies_figure = _build_relative_purchased_copies_figure(
-            _filter_games(games, DEFAULT_GENRE, range_start_date, END_RANGE),
-            selected_period,
-            selected_genre,
-            selected_range,
-            range_start_date,
-            END_RANGE,
+            selected_period, selected_genre, selected_range, range_start_date, END_RANGE
         )
-        
-        pie_start_date = pd.to_datetime(f"{selected_pie_year}-01-01")
-        pie_end_date = pd.to_datetime(f"{selected_pie_year + 1}-01-01")
-        filtered_for_pies = _filter_games(games, selected_genre, pie_start_date, pie_end_date)
 
-        game_type_pie_figure = _build_game_type_pie_figure(filtered_for_pies)
-        platform_pie_figure = _build_platform_pie_figure(filtered_for_pies)
-        controller_pie_figure = _build_controller_support_pie_figure(filtered_for_pies)
-        vr_pie_figure = _build_vr_support_pie_figure(filtered_for_pies)
+        game_type_pie_figure = _build_game_type_pie_figure(selected_genre, selected_pie_year)
+        platform_pie_figure = _build_platform_pie_figure(selected_genre, selected_pie_year)
+        controller_pie_figure = _build_controller_support_pie_figure(selected_genre, selected_pie_year)
+        vr_pie_figure = _build_vr_support_pie_figure(selected_genre, selected_pie_year)
 
-        # ── Custom HTML legends with real values ───────────────────────────
-        cat_series = filtered_for_pies["Categories"].fillna("").astype(str)
-        singleplayer_terms = {"Single-player"}
-        multiplayer_terms = {"Multi-player", "PvP", "Online PvP", "Remote Play Together",
-                             "Cross-Platform Multiplayer", "MMO", "LAN PvP"}
-        coop_terms = {"Co-op", "Remote Play Together", "Online Co-op",
-                      "Shared/Split Screen Co-op", "LAN Co-op"}
-        game_type_values = [
-            int(cat_series.apply(lambda v: _has_any_category(v, singleplayer_terms)).astype(bool).sum()),
-            int(cat_series.apply(lambda v: _has_any_category(v, multiplayer_terms)).astype(bool).sum()),
-            int(cat_series.apply(lambda v: _has_any_category(v, coop_terms)).astype(bool).sum()),
-        ]
+        pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(selected_pie_year), {})
+        game_type_values = pies.get("game_type", [0, 0, 0])
         game_type_legend = _build_pie_legend(
             ["Singleplayer", "Multiplayer", "Co-op"],
             game_type_values,
             ["#3b82f6", "#10b981", "#f59e0b"],
         )
 
-        windows = filtered_for_pies["Windows"].fillna(False).astype(bool)
-        linux_col = filtered_for_pies["Linux"].fillna(False).astype(bool)
-        mac = filtered_for_pies["Mac"].fillna(False).astype(bool)
-        platform_values = [
-            int((windows & ~linux_col & ~mac).sum()),
-            int((windows & linux_col & mac).sum()),
-            int((windows & linux_col & ~mac).sum()),
-            int((windows & ~linux_col & mac).sum()),
-        ]
+        platform_values = pies.get("platform", [0, 0, 0, 0])
         platform_legend = _build_pie_legend(
             ["Win only", "Win+Lin+Mac", "Win+Linux", "Win+Mac"],
             platform_values,
             ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b"],
         )
 
-        ctrl_terms = {"Full controller support", "Partial controller support", "Tracked Controller Support"}
-        ctrl_supported = cat_series.apply(lambda v: _has_any_category(v, ctrl_terms)).astype(bool)
-        controller_values = [int(ctrl_supported.sum()), int((~ctrl_supported).sum())]
+        controller_values = pies.get("controller", [0, 0])
         controller_legend = _build_pie_legend(
             ["Yes", "No"], controller_values, ["#3b82f6", "#cbd5e1"]
         )
 
-        vr_terms = {"VR Only", "VR Supported", "VR Support", "SteamVR Collectibles"}
-        vr_supported = cat_series.apply(lambda v: _has_any_category(v, vr_terms)).astype(bool)
-        vr_values = [int(vr_supported.sum()), int((~vr_supported).sum())]
+        vr_values = pies.get("vr", [0, 0])
         vr_legend = _build_pie_legend(
             ["Yes", "No"], vr_values, ["#3b82f6", "#cbd5e1"]
         )
-        previous_start, previous_end = _period_window(selected_period, start_date)
-        previous_filtered = _filter_games(games, selected_genre, previous_start, previous_end)
 
-        owners = filtered["Owner midpoint"].fillna(0)
-        prices = filtered["Price"].fillna(0)
-        market_value = (owners * prices).sum()
-        purchased_copies = owners.sum()
-        average_playtime = filtered["Average playtime forever"].mean(skipna=True)
-        peak_ccu = filtered["Peak CCU"].max(skipna=True)
+        metrics = PRECOMPUTED["metrics"].get(selected_genre, {}).get(selected_period, {})
+        current = metrics.get("current_period", {"games_released": 0, "market_value": 0, "purchased_copies": 0, "average_playtime": 0, "peak_ccu": 0})
+        previous = metrics.get("previous_period", {"games_released": 0, "market_value": 0, "purchased_copies": 0, "average_playtime": 0, "peak_ccu": 0})
 
-        previous_owners = previous_filtered["Owner midpoint"].fillna(0)
-        previous_prices = previous_filtered["Price"].fillna(0)
-        previous_market_value = (previous_owners * previous_prices).sum()
-        previous_purchased_copies = previous_owners.sum()
-        previous_average_playtime = previous_filtered["Average playtime forever"].mean(skipna=True)
-        previous_peak_ccu = previous_filtered["Peak CCU"].max(skipna=True)
+        games_released = _format_number(current["games_released"])
+        market_value_text = _format_currency(current["market_value"])
+        purchased_copies_text = _format_number(current["purchased_copies"])
+        playtime_text = _format_playtime(current["average_playtime"])
+        peak_ccu_text = _format_number(current["peak_ccu"])
 
-        games_released = _format_number(len(filtered))
-        market_value_text = _format_currency(market_value)
-        purchased_copies_text = _format_number(purchased_copies)
-        playtime_text = _format_playtime(0 if pd.isna(average_playtime) else average_playtime)
-        peak_ccu_text = _format_number(0 if pd.isna(peak_ccu) else peak_ccu)
+        games_change_text, games_change_color = _relative_change(current["games_released"], previous["games_released"])
+        market_change_text, market_change_color = _relative_change(current["market_value"], previous["market_value"])
+        purchased_change_text, purchased_change_color = _relative_change(current["purchased_copies"], previous["purchased_copies"])
+        playtime_change_text, playtime_change_color = _relative_change(current["average_playtime"], previous["average_playtime"])
+        peak_change_text, peak_change_color = _relative_change(current["peak_ccu"], previous["peak_ccu"])
 
-        games_change_text, games_change_color = _relative_change(len(filtered), len(previous_filtered))
-        market_change_text, market_change_color = _relative_change(market_value, previous_market_value)
-        purchased_change_text, purchased_change_color = _relative_change(purchased_copies, previous_purchased_copies)
-        playtime_change_text, playtime_change_color = _relative_change(
-            0 if pd.isna(average_playtime) else average_playtime,
-            0 if pd.isna(previous_average_playtime) else previous_average_playtime,
-        )
-        peak_change_text, peak_change_color = _relative_change(
-            0 if pd.isna(peak_ccu) else peak_ccu,
-            0 if pd.isna(previous_peak_ccu) else previous_peak_ccu,
-        )
-
-        games_comparison_text = _comparison_text(selected_period, len(previous_filtered), _format_number)
-        market_comparison_text = _comparison_text(selected_period, previous_market_value, _format_currency)
-        purchased_comparison_text = _comparison_text(selected_period, previous_purchased_copies, _format_number)
-        playtime_comparison_text = _comparison_text(selected_period, previous_average_playtime, _format_playtime)
-        peak_comparison_text = _comparison_text(selected_period, previous_peak_ccu, _format_number)
+        games_comparison_text = _comparison_text(selected_period, previous["games_released"], _format_number)
+        market_comparison_text = _comparison_text(selected_period, previous["market_value"], _format_currency)
+        purchased_comparison_text = _comparison_text(selected_period, previous["purchased_copies"], _format_number)
+        playtime_comparison_text = _comparison_text(selected_period, previous["average_playtime"], _format_playtime)
+        peak_comparison_text = _comparison_text(selected_period, previous["peak_ccu"], _format_number)
 
 
         return (
