@@ -1,0 +1,23 @@
+# Version control
+.git
+.github
+.gitignore
+
+# Python caches and environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+
+
+data/*
+!data/**/*.parquet
+!data/**/*.json
+
+*.npy
+tutorial_steps.md
+precompute.py
+dashboard.ipynb
+README.md

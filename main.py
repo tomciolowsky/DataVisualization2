@@ -214,4 +214,9 @@ def toggle_sidebar(hide_clicks, show_clicks, tour_clicks, state_data):
     return sidebar_style, content_style, show_btn_style, state_data
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8050))
+    debug = os.environ.get("DEBUG", "False").lower() in ("true", "1", "yes")
+    app.run(host=host, port=port, debug=debug)
+

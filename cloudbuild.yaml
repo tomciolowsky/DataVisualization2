@@ -1,0 +1,48 @@
+steps:
+  - name: 'gcr.io/cloud-builders/curl'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Creating data directory if it doesn't exist..."
+        mkdir -p data
+        
+        echo "Downloading overview_precomputed.json..."
+        curl -L -o data/overview_precomputed.json https://github.com/NameeLesS/MarketDashboard/raw/deployment/data/overview_precomputed.json
+        
+        echo "Downloading insights_precomputed.json..."
+        curl -L -o data/insights_precomputed.json https://github.com/NameeLesS/MarketDashboard/raw/deployment/data/insights_precomputed.json
+        
+        echo "Downloading explore_optimized.parquet..."
+        curl -L -o data/explore_optimized.parquet https://github.com/NameeLesS/MarketDashboard/raw/deployment/data/explore_optimized.parquet
+        
+        echo "All data files successfully downloaded and prepared!"
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'europe-central2-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/game-market-analyzer:$COMMIT_SHA', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'europe-central2-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/game-market-analyzer:$COMMIT_SHA']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'game-market-analyzer'    
+      - '--image'
+      - 'europe-central2-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/game-market-analyzer:$COMMIT_SHA'
+      - '--region'
+      - 'europe-central2'          
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '4Gi'
+      - '--port=8050'
+
+images:
+  - 'europe-central2-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/game-market-analyzer:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
