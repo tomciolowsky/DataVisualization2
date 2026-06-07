@@ -15,6 +15,9 @@ steps:
         
         echo "Downloading explore_optimized.parquet..."
         curl -L -o data/explore_optimized.parquet https://github.com/NameeLesS/MarketDashboard/raw/deployment/data/explore_optimized.parquet
+
+        echo "Downloading explore_options.json..."
+        curl -L -o data/explore_options.json https://github.com/tomciolowsky/DataVisualization2/raw/refs/heads/deployment/data/explore_options.json
         
         echo "All data files successfully downloaded and prepared!"
 

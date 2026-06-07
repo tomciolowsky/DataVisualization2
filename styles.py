@@ -1,9 +1,9 @@
-BG_BASE = "#f8fafc"
-BG_SURFACE = "#ffffff"
-BORDER_COLOR = "#e2e8f0"
-TEXT_PRIMARY = "#0f172a"
-TEXT_SECONDARY = "#64748b"
-ACCENT_COLOR = "#3b82f6"
+BG_BASE = "var(--bg-base)"
+BG_SURFACE = "var(--bg-surface)"
+BORDER_COLOR = "var(--border-color)"
+TEXT_PRIMARY = "var(--text-primary)"
+TEXT_SECONDARY = "var(--text-secondary)"
+ACCENT_COLOR = "var(--accent-color)"
 
 
 APP_STYLE = {
@@ -56,8 +56,8 @@ TAB_STYLE = {
 
 SELECTED_TAB_STYLE = {
     **TAB_STYLE,
-    "color": "#1d4ed8",
-    "backgroundColor": "#eff6ff",
+    "color": "var(--selected-tab-color)",
+    "backgroundColor": "var(--selected-tab-bg)",
     "fontWeight": "500",
 }
 
@@ -167,8 +167,8 @@ HINT_PILL_STYLE = {
     "gap": "0.4rem",
     "padding": "0.45rem 0.7rem",
     "borderRadius": "999px",
-    "backgroundColor": "#eff6ff",
-    "color": "#1d4ed8",
+    "backgroundColor": "var(--accent-color-light)",
+    "color": "var(--selected-tab-color)",
     "fontSize": "0.8rem",
     "fontWeight": "600",
 }
@@ -196,7 +196,7 @@ INPUT_STYLE = {
     "width": "100%",
     "padding": "0.7rem 0.8rem",
     "borderRadius": "10px",
-    "border": "1px solid #dbe4f0",
+    "border": "1px solid var(--input-border)",
     "backgroundColor": BG_SURFACE,
     "color": TEXT_PRIMARY,
     "fontSize": "0.92rem",

@@ -85,6 +85,20 @@ def _multi_options(values: pd.Series) -> list[dict[str, str]]:
 def _load_games() -> pd.DataFrame:
     parquet_path = Path(__file__).resolve().parents[1] / "data" / "explore_optimized.parquet"
     frame = pd.read_parquet(parquet_path)
+    
+    bounds = frame["Estimated owners"].fillna("").astype(str).str.extract(r"(?P<lower>\d+)\s*-\s*(?P<upper>\d+)")
+    frame["Owners lower"] = pd.to_numeric(bounds["lower"], errors="coerce").fillna(0)
+    frame["Owners upper"] = pd.to_numeric(bounds["upper"], errors="coerce").fillna(0)
+    frame["Owner midpoint"] = (frame["Owners lower"] + frame["Owners upper"]) / 2
+
+    def tokenize(value):
+        if not value: return []
+        return [part.strip().lower() for part in str(value).split(",") if part.strip()]
+    
+    frame["_genres_tokens"] = frame["Genres"].fillna("").apply(tokenize)
+    frame["_categories_tokens"] = frame["Categories"].fillna("").apply(tokenize)
+    frame["_tags_tokens"] = frame["Tags"].fillna("").apply(tokenize)
+    
     return frame
 
 
@@ -94,12 +108,15 @@ GAMES = _load_games()
 def _build_available_columns() -> list[str]:
     base_cols = [
         "Name", "Release date", "Estimated owners", "Peak CCU", "Price",
-        "Genres", "Categories", "Tags", "User score", "Metacritic score",
-        "Positive ratings", "Negative ratings", "Positive (raw)", "Negative (raw)"
+        "Genres", "Categories", "Tags", "User score", "Metacritic Score",
+        "Positive percentage", "Negative percentage"
     ]
     other_cols = []
     for c in GAMES.columns:
-        if c not in base_cols and not c.startswith("_"):
+        if (c not in base_cols and 
+            not c.startswith("_") and 
+            not c.startswith("mds_") and 
+            c not in ["Owners lower", "Owners upper", "Owner midpoint"]):
             other_cols.append(c)
     other_cols.sort()
     return base_cols + other_cols
@@ -170,21 +187,24 @@ COLOR_COLUMN_MAP = {
     "Estimated owners": "Owner midpoint",
     "Peak CCU": "Peak CCU",
     "Discount": "Discount",
-    "DLC count": "DLC count",
+    "DLC Count": "DLC Count",
     "Income": "Income",
     "User score": "User score",
-    "Metacritic score": "Metacritic score",
+    "Metacritic Score": "Metacritic Score",
     "Achievements": "Achievements",
-    "Recommendations": "Recommendations",
-    "Average playtime forever": "Average playtime forever",
-    "Average playtime two weeks": "Average playtime two weeks",
-    "Median playtime forever": "Median playtime forever",
-    "Median playtime two weeks": "Median playtime two weeks",
 }
 
-GENRE_OPTIONS    = _multi_options(GAMES["Genres"].dropna().astype(str).str.split(",").explode())
-CATEGORY_OPTIONS = _multi_options(GAMES["Categories"].dropna().astype(str).str.split(",").explode())
-TAG_OPTIONS      = _multi_options(GAMES["Tags"].dropna().astype(str).str.split(",").explode())
+def _load_options():
+    import json
+    path = Path(__file__).resolve().parents[1] / "data" / "explore_options.json"
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+_options = _load_options()
+GENRE_OPTIONS    = _options["genres"]
+CATEGORY_OPTIONS = _options["categories"]
+TAG_OPTIONS      = _options["tags"]
 
 RELEASE_MIN   = GAMES["Release date"].min()
 RELEASE_MAX   = GAMES["Release date"].max()
@@ -193,7 +213,7 @@ PRICE_MAX     = float(GAMES["Price"].max())         if not GAMES["Price"].dropna
 OWNERS_MIN    = int(GAMES["Owners lower"].min())    if not GAMES["Owners lower"].dropna().empty  else 0
 OWNERS_MAX    = int(GAMES["Owners upper"].max())    if not GAMES["Owners upper"].dropna().empty  else 0
 USER_SCORE_MAX = 100
-METACRITIC_MAX = int(GAMES["Metacritic score"].max()) if not GAMES["Metacritic score"].dropna().empty else 100
+METACRITIC_MAX = int(GAMES["Metacritic Score"].max()) if not GAMES["Metacritic Score"].dropna().empty else 100
 POSITIVE_MAX   = 100.0
 
 
@@ -245,14 +265,14 @@ def _filter_games(
         frame = frame[frame["User score"].le(user_score_max)]
 
     if metacritic_min is not None:
-        frame = frame[frame["Metacritic score"].ge(metacritic_min)]
+        frame = frame[frame["Metacritic Score"].ge(metacritic_min)]
     if metacritic_max is not None:
-        frame = frame[frame["Metacritic score"].le(metacritic_max)]
+        frame = frame[frame["Metacritic Score"].le(metacritic_max)]
 
     if positive_min is not None:
-        frame = frame[frame["Positive ratings"].ge(positive_min)]
+        frame = frame[frame["Positive percentage"].ge(positive_min)]
     if positive_max is not None:
-        frame = frame[frame["Positive ratings"].le(positive_max)]
+        frame = frame[frame["Positive percentage"].le(positive_max)]
 
     frame = _apply_token_filter(frame, "Genres", genre_values)
     frame = _apply_token_filter(frame, "Categories", category_values)
@@ -290,27 +310,22 @@ def _table_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Format a raw dataframe slice into display-ready strings for the DataTable."""
     t = frame.copy()
     
-    if "Positive" in t.columns and "Positive (raw)" not in t.columns:
-        t["Positive (raw)"] = t["Positive"].map(lambda v: _fmt(v, ".4f"))
-    if "Negative" in t.columns and "Negative (raw)" not in t.columns:
-        t["Negative (raw)"] = t["Negative"].map(lambda v: _fmt(v, ".4f"))
-
     if "Release date" in t.columns:
         t["Release date"] = t["Release date"].dt.strftime("%Y-%m-%d").fillna("")
     if "Price" in t.columns:
         t["Price"] = t["Price"].map(lambda v: _fmt(v, ".2f"))
     if "User score" in t.columns:
         t["User score"] = t["User score"].map(lambda v: _fmt(v, ".0f"))
-    if "Metacritic score" in t.columns:
-        t["Metacritic score"] = t["Metacritic score"].map(lambda v: _fmt(v, ".0f"))
-    if "Positive ratings" in t.columns:
-        t["Positive ratings"] = t["Positive ratings"].map(lambda v: _fmt(v, ".1f"))
-    if "Negative ratings" in t.columns:
-        t["Negative ratings"] = t["Negative ratings"].map(lambda v: _fmt(v, ".1f"))
+    if "Metacritic Score" in t.columns:
+        t["Metacritic Score"] = t["Metacritic Score"].map(lambda v: _fmt(v, ".0f"))
+    if "Positive percentage" in t.columns:
+        t["Positive percentage"] = t["Positive percentage"].map(lambda v: _fmt(v, ".1f"))
+    if "Negative percentage" in t.columns:
+        t["Negative percentage"] = t["Negative percentage"].map(lambda v: _fmt(v, ".1f"))
     if "Peak CCU" in t.columns:
         t["Peak CCU"] = t["Peak CCU"].map(lambda v: "" if pd.isna(v) else f"{int(v):,}")
     
-    formatted_cols = {"Release date", "Price", "User score", "Metacritic score", "Positive ratings", "Negative ratings", "Peak CCU", "Positive (raw)", "Negative (raw)"}
+    formatted_cols = {"Release date", "Price", "User score", "Metacritic Score", "Positive percentage", "Negative percentage", "Peak CCU"}
     
     for col in t.columns:
         if col in formatted_cols:
@@ -325,16 +340,17 @@ def _table_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return t[cols_to_return]
 
 
-def _table_style(active_cell, selected_game_name: str | None = None, page_data: list[dict] | None = None) -> list[dict]:
+def _table_style(active_cell, selected_game_name: str | None = None, page_data: list[dict] | None = None, theme: str = "light") -> list[dict]:
     """
     Build the style_data_conditional list for the DataTable.
 
     Highlights the row corresponding to the selected game (by name) if present in page_data.
     Otherwise falls back to highlighting the active cell's row.
     """
+    is_dark = theme == "dark"
     styles = [
-        {"if": {"row_index": "odd"},  "backgroundColor": "#f8fafc"},
-        {"if": {"row_index": "even"}, "backgroundColor": "#ffffff"},
+        {"if": {"row_index": "odd"},  "backgroundColor": "#151c2c" if is_dark else "#f8fafc"},
+        {"if": {"row_index": "even"}, "backgroundColor": "#0b0f19" if is_dark else "#ffffff"},
         {"if": {"state": "active"},   "backgroundColor": "inherit", "border": "none", "outline": "none"},
         {"if": {"state": "selected"}, "backgroundColor": "inherit", "border": "none", "outline": "none"},
     ]
@@ -349,12 +365,16 @@ def _table_style(active_cell, selected_game_name: str | None = None, page_data: 
     if highlighted_row is None and isinstance(active_cell, dict) and active_cell.get("row") is not None:
         highlighted_row = active_cell["row"]
 
+    highlight_bg = "rgba(99, 102, 241, 0.25)" if is_dark else "#dbeafe"
+    highlight_color = "#e0e7ff" if is_dark else "#1e40af"
+    highlight_border = "1px solid #4f46e5" if is_dark else "1px solid #93c5fd"
+
     if highlighted_row is not None:
         styles.append({
             "if": {"row_index": highlighted_row},
-            "backgroundColor": "#dbeafe",
-            "color": "#1e40af",
-            "borderBottom": "1px solid #93c5fd",
+            "backgroundColor": highlight_bg,
+            "color": highlight_color,
+            "borderBottom": highlight_border,
         })
 
     if isinstance(active_cell, dict) and active_cell.get("row") is not None:
@@ -363,8 +383,8 @@ def _table_style(active_cell, selected_game_name: str | None = None, page_data: 
         if col:
             styles.append({
                 "if": {"state": "active", "row_index": row, "column_id": col},
-                "backgroundColor": "#dbeafe",
-                "color": "#1e40af",
+                "backgroundColor": highlight_bg,
+                "color": highlight_color,
                 "border": "none",
                 "outline": "none",
             })
@@ -372,11 +392,12 @@ def _table_style(active_cell, selected_game_name: str | None = None, page_data: 
     return styles
 
 
-def _empty_figure(message: str, height: int | None = None) -> go.Figure:
+def _empty_figure(message: str, height: int | None = None, theme: str = "light") -> go.Figure:
+    is_dark = theme == "dark"
     layout: dict = {
-        "template": "plotly_white",
-        "paper_bgcolor": "#ffffff",
-        "plot_bgcolor": "#ffffff",
+        "template": "plotly_dark" if is_dark else "plotly_white",
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
         "margin": {"l": 42, "r": 18, "t": 18, "b": 42},
         "xaxis": {"visible": False},
         "yaxis": {"visible": False},
@@ -385,7 +406,7 @@ def _empty_figure(message: str, height: int | None = None) -> go.Figure:
             "xref": "paper", "yref": "paper",
             "x": 0.5, "y": 0.5,
             "showarrow": False,
-            "font": {"size": 15, "color": TEXT_SECONDARY},
+            "font": {"size": 15, "color": "#94a3b8" if is_dark else "#64748b"},
         }],
     }
     if height is not None:
@@ -421,25 +442,27 @@ def _shared_chart_xaxis(names: list[str]) -> dict:
     }
 
 
-def _shared_chart_yaxis(title: str, tick_vals: list, tick_text: list) -> dict:
+def _shared_chart_yaxis(title: str, tick_vals: list, tick_text: list, theme: str = "light") -> dict:
+    is_dark = theme == "dark"
     return {
         "title": title,
         "range": [-105, 105],
         "zeroline": True,
-        "zerolinecolor": "#475569",
+        "zerolinecolor": "#94a3b8" if is_dark else "#475569",
         "zerolinewidth": 1.5,
         "tickvals": tick_vals,
         "ticktext": tick_text,
-        "gridcolor": "#e2e8f0",
+        "gridcolor": "#1e293b" if is_dark else "#e2e8f0",
     }
 
 
-def _shared_bar_layout_kwargs(uirevision: str) -> dict:
+def _shared_bar_layout_kwargs(uirevision: str, theme: str = "light") -> dict:
     """Common layout kwargs for the two mirrored bar charts."""
+    is_dark = theme == "dark"
     return {
-        "template": "plotly_white",
-        "paper_bgcolor": "#ffffff",
-        "plot_bgcolor": "#ffffff",
+        "template": "plotly_dark" if is_dark else "plotly_white",
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
         "height": CHART_HEIGHT,
         "margin": {"l": 50, "r": 10, "t": 10, "b": 20},
         "barmode": "overlay",
@@ -451,7 +474,7 @@ def _shared_bar_layout_kwargs(uirevision: str) -> dict:
     }
 
 
-def _build_score_figure(display_df: pd.DataFrame, selected_game: str | None) -> go.Figure:
+def _build_score_figure(display_df: pd.DataFrame, selected_game: str | None, theme: str = "light") -> go.Figure:
     """User score (up) vs Metacritic score (down) mirrored bar chart."""
     names = display_df["Name"]
     traces = [
@@ -464,10 +487,10 @@ def _build_score_figure(display_df: pd.DataFrame, selected_game: str | None) -> 
         ),
         go.Bar(
             x=names,
-            y=-display_df["Metacritic score"],
+            y=-display_df["Metacritic Score"],
             marker=_bar_marker(names, selected_game, COLOR_META_SCORE),
             name="Metacritic Score",
-            customdata=display_df["Metacritic score"],
+            customdata=display_df["Metacritic Score"],
             hovertemplate="Game: %{x}<br>Metacritic Score: %{customdata:.0f}<extra></extra>",
         ),
     ]
@@ -475,18 +498,19 @@ def _build_score_figure(display_df: pd.DataFrame, selected_game: str | None) -> 
     tick_text  = ["100", "80", "60", "40", "20", "0", "20", "40", "60", "80", "100"]
     fig = go.Figure(data=traces)
     fig.update_layout(
-        **_shared_bar_layout_kwargs("score-plot"),
+        **_shared_bar_layout_kwargs("score-plot", theme),
         xaxis=_shared_chart_xaxis(names.tolist()),
-        yaxis=_shared_chart_yaxis("Score", tick_vals, tick_text),
+        yaxis=_shared_chart_yaxis("Score", tick_vals, tick_text, theme),
     )
     return fig
 
 
-def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None) -> go.Figure:
+def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None, theme: str = "light") -> go.Figure:
     """Score divergence (User − Metacritic) lollipop chart."""
     df = display_df.copy()
-    df["Divergence"] = df["User score"] - df["Metacritic score"]
+    df["Divergence"] = df["User score"] - df["Metacritic Score"]
     names = df["Name"].tolist()
+    is_dark = theme == "dark"
 
     # Per-point marker appearance
     marker_colors, marker_line_colors, marker_line_widths, marker_sizes = [], [], [], []
@@ -497,7 +521,7 @@ def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None) -
             marker_line_widths.append(1.5)
             marker_sizes.append(10)
         else:
-            marker_colors.append(COLOR_DIVERGE_DEFAULT)
+            marker_colors.append("#cbd5e1" if is_dark else "#0f172a")
             marker_line_colors.append("rgba(0,0,0,0)")
             marker_line_widths.append(0)
             marker_sizes.append(5)
@@ -513,7 +537,7 @@ def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None) -
             "x1": row["Name"], "y1": row["Divergence"],
             "xref": "x", "yref": "y",
             "line": {
-                "color": COLOR_SELECTED if is_selected else COLOR_DIVERGE_DEFAULT,
+                "color": COLOR_SELECTED if is_selected else ("#475569" if is_dark else "#cbd5e1"),
                 "width": 2.0 if is_selected else 1.0,
                 "dash": "dash",
             },
@@ -523,7 +547,7 @@ def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None) -
     tick_text = ["-100", "-80", "-60", "-40", "-20", "0", "+20", "+40", "+60", "+80", "+100"]
 
     fig = go.Figure(data=[
-        go.Scatter(
+        go.Scattergl(
             x=names,
             y=df["Divergence"],
             mode="markers",
@@ -537,14 +561,14 @@ def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None) -
         )
     ])
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#ffffff",
+        template="plotly_dark" if is_dark else "plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
         height=CHART_HEIGHT,
         margin={"l": 50, "r": 10, "t": 10, "b": 20},
         uirevision="diverge-plot",
         xaxis=_shared_chart_xaxis(names),
-        yaxis=_shared_chart_yaxis("Divergence", tick_vals, tick_text),
+        yaxis=_shared_chart_yaxis("Divergence", tick_vals, tick_text, theme),
         shapes=shapes,
         hovermode="closest",
         showlegend=False,
@@ -552,23 +576,26 @@ def _build_diverge_figure(display_df: pd.DataFrame, selected_game: str | None) -
     return fig
 
 
-def _build_ratings_figure(display_df: pd.DataFrame, selected_game: str | None) -> go.Figure:
+def _build_ratings_figure(display_df: pd.DataFrame, selected_game: str | None, theme: str = "light") -> go.Figure:
     """Positive (up) vs Negative (down) ratings mirrored bar chart."""
     names = display_df["Name"]
+    positive_ratings = display_df["Positive percentage"]
+    negative_ratings = display_df["Negative percentage"]
+    
     traces = [
         go.Bar(
             x=names,
-            y=display_df["Positive ratings"],
+            y=positive_ratings,
             marker=_bar_marker(names, selected_game, COLOR_POSITIVE),
             name="Positive Ratings",
             hovertemplate="Game: %{x}<br>Positive Ratings: %{y:.1f}%<extra></extra>",
         ),
         go.Bar(
             x=names,
-            y=-display_df["Negative ratings"],
+            y=-negative_ratings,
             marker=_bar_marker(names, selected_game, COLOR_NEGATIVE),
             name="Negative Ratings",
-            customdata=display_df["Negative ratings"],
+            customdata=negative_ratings,
             hovertemplate="Game: %{x}<br>Negative Ratings: %{customdata:.1f}%<extra></extra>",
         ),
     ]
@@ -576,17 +603,17 @@ def _build_ratings_figure(display_df: pd.DataFrame, selected_game: str | None) -
     tick_text = ["100%", "80%", "60%", "40%", "20%", "0%", "20%", "40%", "60%", "80%", "100%"]
     fig = go.Figure(data=traces)
     fig.update_layout(
-        **_shared_bar_layout_kwargs("ratings-plot"),
+        **_shared_bar_layout_kwargs("ratings-plot", theme),
         xaxis=_shared_chart_xaxis(names.tolist()),
-        yaxis=_shared_chart_yaxis("Ratings (%)", tick_vals, tick_text),
+        yaxis=_shared_chart_yaxis("Ratings (%)", tick_vals, tick_text, theme),
     )
     return fig
 
 
-def _histogram_figure(frame: pd.DataFrame, filter_signature: str) -> go.Figure:
+def _histogram_figure(frame: pd.DataFrame, filter_signature: str, theme: str = "light") -> go.Figure:
     values = frame["Peak CCU"].dropna()
     if values.empty:
-        return _empty_figure("No games match the current filters.")
+        return _empty_figure("No games match the current filters.", theme=theme)
 
     values_min = float(values.min())
     values_max = float(values.max())
@@ -608,22 +635,23 @@ def _histogram_figure(frame: pd.DataFrame, filter_signature: str) -> go.Figure:
     bin_size      = max(visible_span / dynamic_bins, 1e-9)
     y_ui_revision = f"{filter_signature}|{visible_min:.6f}|{visible_max:.6f}|{dynamic_bins}"
 
+    is_dark = theme == "dark"
     fig = go.Figure(data=[
         go.Histogram(
             x=values,
             autobinx=False,
             xbins={"start": visible_min, "end": visible_max, "size": bin_size},
-            marker={"color": ACCENT_COLOR, "line": {"color": "#1d4ed8", "width": 0.5}},
+            marker={"color": ACCENT_COLOR, "line": {"color": "#6366f1" if is_dark else "#1d4ed8", "width": 0.5}},
             hovertemplate="Distribution Of Users Highest Activity: %{x}<br>Count: %{y}<extra></extra>",
         )
     ])
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#ffffff",
+        template="plotly_dark" if is_dark else "plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
         margin={"l": 42, "r": 18, "t": 10, "b": 42},
-        xaxis={"title": "Distribution Of Users Highest Activity", "uirevision": filter_signature},
-        yaxis={"title": "Games", "autorange": True, "uirevision": y_ui_revision},
+        xaxis={"title": "Distribution Of Users Highest Activity", "uirevision": filter_signature, "gridcolor": "#1e293b" if is_dark else "#e2e8f0"},
+        yaxis={"title": "Games", "autorange": True, "uirevision": y_ui_revision, "gridcolor": "#1e293b" if is_dark else "#e2e8f0"},
         bargap=0.05,
         uirevision=filter_signature,
         dragmode="zoom",
@@ -761,10 +789,10 @@ layout = html.Div(
                         _field("User score",
                                _build_range_inputs("explore-user-score", 0, USER_SCORE_MAX, step=1),
                                "Score is constrained to the 0–100 range."),
-                        _field("Metacritic score",
+                        _field("Metacritic Score",
                                _build_range_inputs("explore-metacritic", 0, METACRITIC_MAX, step=1),
                                "Lower and upper Metacritic score bounds."),
-                        _field("Positive ratings",
+                        _field("Positive percentage",
                                _build_range_inputs("explore-positive", 0, POSITIVE_MAX, step=0.1),
                                "Values are shown as percentages from 0 to 100."),
                     ],
@@ -862,10 +890,8 @@ layout = html.Div(
                                 dcc.Dropdown(
                                     id="explore-scatter-color-by",
                                     options=[{"label": col, "value": col} for col in [
-                                        "Price", "Required age", "Estimated owners", "Peak CCU", "Discount", "DLC count",
-                                        "Income", "User score", "Metacritic score", "Achievements", "Recommendations",
-                                        "Average playtime forever", "Average playtime two weeks", "Median playtime forever",
-                                        "Median playtime two weeks"
+                                        "Price", "Required age", "Estimated owners", "Peak CCU", "Discount", "DLC Count",
+                                        "Income", "User score", "Metacritic Score", "Achievements"
                                     ]],
                                     value="Price",
                                     clearable=False,
@@ -897,7 +923,7 @@ layout = html.Div(
                     "explore-score-plot",
                     sort_buttons=_sort_button_pair(
                         "User score",      "explore-score-sort-user",
-                        "Metacritic score","explore-score-sort-meta",
+                        "Metacritic Score","explore-score-sort-meta",
                     ),
                 ),
                 _chart_card("Score diverge", "explore-diverge-plot"),
@@ -984,6 +1010,7 @@ def register_callbacks(app):
         Input("explore-scatter-dist-method",      "data"),
         Input("explore-scatter-color-by",         "value"),
         Input("explore-selected-game",            "data"),
+        Input("theme-store",                      "data"),
     )
     def update_explore(
         genre_values, price_min, price_max,
@@ -998,22 +1025,23 @@ def register_callbacks(app):
         ratings_sort_pos_clicks, ratings_sort_neg_clicks,
         scatter_relayout_data, scatter_click_data,
         dist_method, color_by, stored_selected_game,
+        theme,
     ):
         score_sort_metric = (
-            "Metacritic score"
+            "Metacritic Score"
             if (score_sort_meta_clicks or 0) > (score_sort_user_clicks or 0)
             else "User score"
         )
         ratings_sort_metric = (
-            "Negative ratings"
+            "Negative percentage"
             if (ratings_sort_neg_clicks or 0) > (ratings_sort_pos_clicks or 0)
-            else "Positive ratings"
+            else "Positive percentage"
         )
 
         score_user_style    = SORT_BUTTON_SMALL_ACTIVE_STYLE if score_sort_metric   == "User score"       else SORT_BUTTON_SMALL_BASE_STYLE
-        score_meta_style    = SORT_BUTTON_SMALL_ACTIVE_STYLE if score_sort_metric   == "Metacritic score"  else SORT_BUTTON_SMALL_BASE_STYLE
-        ratings_pos_style   = SORT_BUTTON_SMALL_ACTIVE_STYLE if ratings_sort_metric == "Positive ratings"  else SORT_BUTTON_SMALL_BASE_STYLE
-        ratings_neg_style   = SORT_BUTTON_SMALL_ACTIVE_STYLE if ratings_sort_metric == "Negative ratings"  else SORT_BUTTON_SMALL_BASE_STYLE
+        score_meta_style    = SORT_BUTTON_SMALL_ACTIVE_STYLE if score_sort_metric   == "Metacritic Score"  else SORT_BUTTON_SMALL_BASE_STYLE
+        ratings_pos_style   = SORT_BUTTON_SMALL_ACTIVE_STYLE if ratings_sort_metric == "Positive percentage"  else SORT_BUTTON_SMALL_BASE_STYLE
+        ratings_neg_style   = SORT_BUTTON_SMALL_ACTIVE_STYLE if ratings_sort_metric == "Negative percentage"  else SORT_BUTTON_SMALL_BASE_STYLE
 
         euclidean_btn_style = BUTTON_ACTIVE_STYLE if dist_method == "euclidean" else BUTTON_BASE_STYLE
         cosine_btn_style    = BUTTON_ACTIVE_STYLE if dist_method == "cosine" else BUTTON_BASE_STYLE
@@ -1053,7 +1081,7 @@ def register_callbacks(app):
         filtered_with_zoom = df_filtered_by_scatter.copy()
         filtered_with_zoom.attrs["zoom_min"] = x_min
         filtered_with_zoom.attrs["zoom_max"] = x_max
-        histogram_figure = _histogram_figure(filtered_with_zoom, filter_signature)
+        histogram_figure = _histogram_figure(filtered_with_zoom, filter_signature, theme)
 
         df_filtered_by_hist = filtered
         if x_min is not None and x_max is not None:
@@ -1119,15 +1147,15 @@ def register_callbacks(app):
         num_visible = len(visible_df)
 
         if plot_df.empty:
-            scatter_fig = _empty_figure("No games match the current filters.", height=600)
+            scatter_fig = _empty_figure("No games match the current filters.", height=600, theme=theme)
         else:
             color_col = COLOR_COLUMN_MAP.get(color_by, "Price")
             
             if color_by in ["Price", "Income"]:
                 value_fmt = "$%{customdata[1]:,.2f}"
-            elif color_by in ["Peak CCU", "Estimated owners", "Recommendations", "Achievements", "DLC count", "Discount", "Required age"]:
+            elif color_by in ["Peak CCU", "Estimated owners", "Achievements", "DLC Count", "Discount", "Required age"]:
                 value_fmt = "%{customdata[1]:,.0f}"
-            elif color_by in ["User score", "Metacritic score", "Average playtime forever", "Average playtime two weeks", "Median playtime forever", "Median playtime two weeks"]:
+            elif color_by in ["User score", "Metacritic Score"]:
                 value_fmt = "%{customdata[1]:,.1f}"
             else:
                 value_fmt = "%{customdata[1]}"
@@ -1174,7 +1202,7 @@ def register_callbacks(app):
                 hovertemplate = f"<b>Aggregated Region</b><br>Games Count: %{{customdata[0]:,}}<br>{color_by} (Median): {value_fmt}<extra></extra>"
 
                 scatter_fig.add_trace(
-                    go.Scatter(
+                    go.Scattergl(
                         x=grouped["x_center"],
                         y=grouped["y_center"],
                         mode="markers",
@@ -1198,7 +1226,7 @@ def register_callbacks(app):
                     if not selected_row.empty:
                         single_hover = f"<b>%{{text}} (Selected)</b><br>{color_by}: {value_fmt}<extra></extra>"
                         scatter_fig.add_trace(
-                            go.Scatter(
+                            go.Scattergl(
                                 x=selected_row[x_col],
                                 y=selected_row[y_col],
                                 mode="markers",
@@ -1219,7 +1247,7 @@ def register_callbacks(app):
                 hovertemplate = f"<b>%{{text}}</b><br>{color_by}: {value_fmt}<extra></extra>"
 
                 scatter_fig.add_trace(
-                    go.Scatter(
+                    go.Scattergl(
                         x=visible_df[x_col],
                         y=visible_df[y_col],
                         mode="markers",
@@ -1243,7 +1271,7 @@ def register_callbacks(app):
                     selected_row = visible_df[visible_df["Name"] == selected_game]
                     if not selected_row.empty:
                         scatter_fig.add_trace(
-                            go.Scatter(
+                            go.Scattergl(
                                 x=selected_row[x_col],
                                 y=selected_row[y_col],
                                 mode="markers",
@@ -1260,14 +1288,15 @@ def register_callbacks(app):
                             )
                         )
 
+            is_dark = theme == "dark"
             scatter_fig.update_layout(
-                template="plotly_white",
-                paper_bgcolor="#ffffff",
-                plot_bgcolor="#ffffff",
+                template="plotly_dark" if is_dark else "plotly_white",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
                 margin={"l": 40, "r": 20, "t": 20, "b": 40},
                 height=600,
-                xaxis={"title": "MDS X" if dist_method == "euclidean" else "MDS Cosine X", "gridcolor": "#e2e8f0"},
-                yaxis={"title": "MDS Y" if dist_method == "euclidean" else "MDS Cosine Y", "gridcolor": "#e2e8f0"},
+                xaxis={"title": "MDS X" if dist_method == "euclidean" else "MDS Cosine X", "gridcolor": "#1e293b" if is_dark else "#e2e8f0"},
+                yaxis={"title": "MDS Y" if dist_method == "euclidean" else "MDS Cosine Y", "gridcolor": "#1e293b" if is_dark else "#e2e8f0"},
                 uirevision="scatter-plot-revision",
                 dragmode="zoom",
                 hovermode="closest",
@@ -1287,18 +1316,18 @@ def register_callbacks(app):
 
         if display_score.empty:
             empty_msg  = "No games match the current filters."
-            score_fig  = _empty_figure(empty_msg)
-            diverge_fig= _empty_figure(empty_msg)
-            ratings_fig= _empty_figure(empty_msg)
+            score_fig  = _empty_figure(empty_msg, theme=theme)
+            diverge_fig= _empty_figure(empty_msg, theme=theme)
+            ratings_fig= _empty_figure(empty_msg, theme=theme)
         else:
-            score_fig   = _build_score_figure(display_score,   selected_game)
-            diverge_fig = _build_diverge_figure(display_score, selected_game)
-            ratings_fig = _build_ratings_figure(display_ratings, selected_game)
+            score_fig   = _build_score_figure(display_score,   selected_game, theme)
+            diverge_fig = _build_diverge_figure(display_score, selected_game, theme)
+            ratings_fig = _build_ratings_figure(display_ratings, selected_game, theme)
 
         return (
             histogram_figure,
             table_columns, page_data, page_count, current_page,
-            _table_style(active_cell, selected_game, page_data),
+            _table_style(active_cell, selected_game, page_data, theme),
             scatter_fig,
             score_fig, diverge_fig, ratings_fig,
             score_user_style, score_meta_style,

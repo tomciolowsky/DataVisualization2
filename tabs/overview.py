@@ -277,8 +277,10 @@ def _get_xaxis_ticks(x_values, period, selected_range):
     return x_values, [t.strftime("%Y-%m-%d") for t in x_values]
 
 
-def _build_pie_figure(labels, values, title, colors):
+def _build_pie_figure(labels, values, title, colors, theme="light"):
     """Build a filled pie chart figure with no native legend (legend rendered as custom HTML)."""
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
     return {
         "data": [
             {
@@ -294,12 +296,13 @@ def _build_pie_figure(labels, values, title, colors):
             }
         ],
         "layout": {
-            "title": {"text": f"<b>{title}</b>", "x": 0.02, "xanchor": "left", "font": {"size": 15}},
+            "title": {"text": f"<b>{title}</b>", "x": 0.02, "xanchor": "left", "font": {"size": 15, "color": font_color}},
             "margin": {"l": 8, "r": 8, "t": 36, "b": 8},
             "paper_bgcolor": "rgba(0,0,0,0)",
             "plot_bgcolor": "rgba(0,0,0,0)",
             "showlegend": False,
-            "font": {"family": "Inter, sans-serif", "color": TEXT_PRIMARY},
+            "font": {"family": "Inter, sans-serif", "color": font_color},
+            "template": "plotly_dark" if is_dark else "plotly_white",
         },
     }
 
@@ -361,7 +364,7 @@ def _build_pie_legend(labels, values, colors):
     )
 
 
-def _build_game_type_pie_figure(selected_genre, year):
+def _build_game_type_pie_figure(selected_genre, year, theme="light"):
     pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
     values = pies.get("game_type", [0, 0, 0])
     labels = ["Singleplayer", "Multiplayer", "Co-op"]
@@ -370,10 +373,11 @@ def _build_game_type_pie_figure(selected_genre, year):
         values,
         "Game Type",
         ["#3b82f6", "#10b981", "#f59e0b"],
+        theme=theme,
     )
 
 
-def _build_platform_pie_figure(selected_genre, year):
+def _build_platform_pie_figure(selected_genre, year, theme="light"):
     pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
     values = pies.get("platform", [0, 0, 0, 0])
     labels = ["Windows only", "Windows + Linux + Mac", "Windows + Linux", "Windows + Mac"]
@@ -382,10 +386,11 @@ def _build_platform_pie_figure(selected_genre, year):
         values,
         "Supported Platforms",
         ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6"],
+        theme=theme,
     )
 
 
-def _build_controller_support_pie_figure(selected_genre, year):
+def _build_controller_support_pie_figure(selected_genre, year, theme="light"):
     pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
     values = pies.get("controller", [0, 0])
     labels = ["Yes", "No"]
@@ -394,10 +399,11 @@ def _build_controller_support_pie_figure(selected_genre, year):
         values,
         "Controller Support",
         ["#3b82f6", "#10b981"],
+        theme=theme,
     )
 
 
-def _build_vr_support_pie_figure(selected_genre, year):
+def _build_vr_support_pie_figure(selected_genre, year, theme="light"):
     pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(year), {})
     values = pies.get("vr", [0, 0])
     labels = ["Yes", "No"]
@@ -406,6 +412,7 @@ def _build_vr_support_pie_figure(selected_genre, year):
         values,
         "VR Support",
         ["#3b82f6", "#10b981"],
+        theme=theme,
     )
 
 
@@ -435,7 +442,7 @@ def _genre_purchased_copies_buckets(selected_period, start_date, end_date):
     return df
 
 
-def _build_market_value_figure(selected_genre, period, selected_range, start_date, end_date):
+def _build_market_value_figure(selected_genre, period, selected_range, start_date, end_date, theme="light"):
     grouped = _bucket_market_value(selected_genre, period, start_date, end_date)
     return timeseries_line_figure(
         grouped,
@@ -446,10 +453,11 @@ def _build_market_value_figure(selected_genre, period, selected_range, start_dat
         yaxis_title="Market value",
         hover_template="%{x|%b %d, %Y}<br>Market value: $%{y:,.0f}<extra></extra>",
         currency=True,
+        theme=theme,
     )
 
 
-def _build_purchased_copies_figure(selected_genre, period, selected_range, start_date, end_date):
+def _build_purchased_copies_figure(selected_genre, period, selected_range, start_date, end_date, theme="light"):
     grouped = _bucket_purchased_copies(selected_genre, period, start_date, end_date)
     return timeseries_line_figure(
         grouped,
@@ -460,10 +468,11 @@ def _build_purchased_copies_figure(selected_genre, period, selected_range, start
         yaxis_title="Purchased copies",
         hover_template="%{x|%b %d, %Y}<br>Purchased copies: %{y:,.0f}<extra></extra>",
         currency=False,
+        theme=theme,
     )
 
 
-def timeseries_line_figure(grouped, period, selected_range, y_col, title, yaxis_title, hover_template, currency=False):
+def timeseries_line_figure(grouped, period, selected_range, y_col, title, yaxis_title, hover_template, currency=False, theme="light"):
     """Build a line figure from a grouped dataframe with a datetime 'Release date' index and a numeric y_col."""
     if not grouped.empty:
         index = pd.period_range(
@@ -476,7 +485,11 @@ def timeseries_line_figure(grouped, period, selected_range, y_col, title, yaxis_
     x_values = grouped["Release date"].dt.to_pydatetime().tolist() if not grouped.empty else []
     y_values = grouped[y_col].tolist() if not grouped.empty else []
 
-    yaxis = {"title": yaxis_title, "separatethousands": True, "showgrid": True}
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
+    grid_color = "#1e293b" if is_dark else "#e2e8f0"
+
+    yaxis = {"title": yaxis_title, "separatethousands": True, "showgrid": True, "gridcolor": grid_color}
     if currency:
         yaxis.update({"tickprefix": "$", "separatethousands": True})
 
@@ -496,7 +509,7 @@ def timeseries_line_figure(grouped, period, selected_range, y_col, title, yaxis_
             }
         ],
         "layout": {
-            "title": {"text": f"<b>{title}</b>", "x": 0.02, "xanchor": "left"},
+            "title": {"text": f"<b>{title}</b>", "x": 0.02, "xanchor": "left", "font": {"color": font_color}},
             "margin": {"l": 50, "r": 20, "t": 52, "b": 50},
             "paper_bgcolor": "rgba(0,0,0,0)",
             "plot_bgcolor": "rgba(0,0,0,0)",
@@ -507,14 +520,16 @@ def timeseries_line_figure(grouped, period, selected_range, y_col, title, yaxis_
                 "showgrid": False,
                 "tickvals": tickvals,
                 "ticktext": ticktext,
+                "gridcolor": grid_color,
             },
             "yaxis": yaxis,
-            "font": {"family": "Inter, sans-serif", "color": TEXT_PRIMARY},
+            "font": {"family": "Inter, sans-serif", "color": font_color},
+            "template": "plotly_dark" if is_dark else "plotly_white",
         },
     }
 
 
-def _build_relative_market_value_figure(period, selected_genre, selected_range, start_date, end_date):
+def _build_relative_market_value_figure(period, selected_genre, selected_range, start_date, end_date, theme="light"):
     grouped = _genre_market_value_buckets(period, start_date, end_date)
     return relative_barchart_figure(
         grouped,
@@ -526,10 +541,11 @@ def _build_relative_market_value_figure(period, selected_genre, selected_range, 
         hover_label="Market value",
         currency=True,
         selected_genre=selected_genre,
+        theme=theme,
     )
 
 
-def _build_relative_purchased_copies_figure(period, selected_genre, selected_range, start_date, end_date):
+def _build_relative_purchased_copies_figure(period, selected_genre, selected_range, start_date, end_date, theme="light"):
     grouped = _genre_purchased_copies_buckets(period, start_date, end_date)
     return relative_barchart_figure(
         grouped,
@@ -541,10 +557,11 @@ def _build_relative_purchased_copies_figure(period, selected_genre, selected_ran
         hover_label="Purchased copies",
         currency=False,
         selected_genre=selected_genre,
+        theme=theme,
     )
 
 
-def relative_barchart_figure(grouped, period, selected_range, value_col, title, yaxis_title, hover_label, currency=False, selected_genre=None):
+def relative_barchart_figure(grouped, period, selected_range, value_col, title, yaxis_title, hover_label, currency=False, selected_genre=None, theme="light"):
     """Build a per-column-sorted stacked bar chart using explicit base arrays.
 
     For every time-period column, genres are sorted independently by their value in that column
@@ -626,6 +643,11 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
     bar_traces = []
     line_traces = []
 
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
+    grid_color = "#1e293b" if is_dark else "#e2e8f0"
+    highlight_color = "#ffffff" if is_dark else "#0f172a"
+
     for genre in sorted_genres_overall:
         if genre not in pivot_data:
             continue
@@ -647,7 +669,7 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
             "customdata": y_arr,
             "marker": {
                 "color": color,
-                "line": {"color": "#0f172a" if is_highlighted else color, "width": 1.4 if is_highlighted else 0.5},
+                "line": {"color": highlight_color if is_highlighted else color, "width": 1.4 if is_highlighted else 0.5},
                 "opacity": 0.96 if is_highlighted else 0.72,
             },
             "hovertemplate": hoverfmt,
@@ -662,15 +684,15 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
                 "name": f"{genre} trend",
                 "x": x_values,
                 "y": midpoint_values,
-                "line": {"color": "#0f172a", "width": 3},
-                "marker": {"color": "#0f172a", "size": 6},
+                "line": {"color": highlight_color, "width": 3},
+                "marker": {"color": highlight_color, "size": 6},
                 "hoverinfo": "skip",
                 "showlegend": False,
             })
 
     traces = bar_traces + line_traces
 
-    yaxis = {"title": yaxis_title, "separatethousands": True, "showgrid": True}
+    yaxis = {"title": yaxis_title, "separatethousands": True, "showgrid": True, "gridcolor": grid_color}
     if currency:
         yaxis.update({"tickprefix": "$", "separatethousands": True})
 
@@ -679,7 +701,7 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
     return {
         "data": traces,
         "layout": {
-            "title": {"text": f"<b>{title}</b>", "x": 0.02, "xanchor": "left"},
+            "title": {"text": f"<b>{title}</b>", "x": 0.02, "xanchor": "left", "font": {"color": font_color}},
             "margin": {"l": 50, "r": 20, "t": 52, "b": 50},
             "paper_bgcolor": "rgba(0,0,0,0)",
             "plot_bgcolor": "rgba(0,0,0,0)",
@@ -692,10 +714,12 @@ def relative_barchart_figure(grouped, period, selected_range, value_col, title, 
                 "showgrid": False,
                 "tickvals": tickvals,
                 "ticktext": ticktext,
+                "gridcolor": grid_color,
             },
             "yaxis": yaxis,
             "showlegend": False,
-            "font": {"family": "Inter, sans-serif", "color": TEXT_PRIMARY},
+            "font": {"family": "Inter, sans-serif", "color": font_color},
+            "template": "plotly_dark" if is_dark else "plotly_white",
         },
     }
 
@@ -1128,27 +1152,28 @@ def register_callbacks(app):
         Input(PERIOD_STORE_ID, "data"),
         Input(RANGE_STORE_ID, "data"),
         Input("overview-pie-year-dropdown", "value"),
+        Input("theme-store", "data"),
     )
-    def update_metrics(selected_genre, selected_period, selected_range, selected_pie_year):
+    def update_metrics(selected_genre, selected_period, selected_range, selected_pie_year, theme):
         range_start_date = _range_start_date(selected_range)
 
         market_value_figure = _build_market_value_figure(
-            selected_genre, selected_period, selected_range, range_start_date, END_RANGE
+            selected_genre, selected_period, selected_range, range_start_date, END_RANGE, theme=theme
         )
         relative_market_value_figure = _build_relative_market_value_figure(
-            selected_period, selected_genre, selected_range, range_start_date, END_RANGE
+            selected_period, selected_genre, selected_range, range_start_date, END_RANGE, theme=theme
         )
         purchased_copies_figure = _build_purchased_copies_figure(
-            selected_genre, selected_period, selected_range, range_start_date, END_RANGE
+            selected_genre, selected_period, selected_range, range_start_date, END_RANGE, theme=theme
         )
         relative_purchased_copies_figure = _build_relative_purchased_copies_figure(
-            selected_period, selected_genre, selected_range, range_start_date, END_RANGE
+            selected_period, selected_genre, selected_range, range_start_date, END_RANGE, theme=theme
         )
 
-        game_type_pie_figure = _build_game_type_pie_figure(selected_genre, selected_pie_year)
-        platform_pie_figure = _build_platform_pie_figure(selected_genre, selected_pie_year)
-        controller_pie_figure = _build_controller_support_pie_figure(selected_genre, selected_pie_year)
-        vr_pie_figure = _build_vr_support_pie_figure(selected_genre, selected_pie_year)
+        game_type_pie_figure = _build_game_type_pie_figure(selected_genre, selected_pie_year, theme=theme)
+        platform_pie_figure = _build_platform_pie_figure(selected_genre, selected_pie_year, theme=theme)
+        controller_pie_figure = _build_controller_support_pie_figure(selected_genre, selected_pie_year, theme=theme)
+        vr_pie_figure = _build_vr_support_pie_figure(selected_genre, selected_pie_year, theme=theme)
 
         pies = PRECOMPUTED["pies"].get(selected_genre, {}).get(str(selected_pie_year), {})
         game_type_values = pies.get("game_type", [0, 0, 0])
