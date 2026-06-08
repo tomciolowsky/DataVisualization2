@@ -1,97 +1,209 @@
-/* ─── Dash Dropdown — polished overrides ─────────────────────────────────── */
+/* ─── Reset default page spacing ──────────────────────────────────────────── */
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+  transition: background-color 0.2s ease, color 0.2s ease !important;
+}
 
-/* Outer container */
-.Select-control {
+/* ─── App theme variable mappings ─────────────────────────────────────────── */
+
+:root, .theme-light {
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --border-color: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --accent-color: #3b82f6;
+  --accent-color-light: #eff6ff;
+  --selected-tab-bg: #eff6ff;
+  --selected-tab-color: #1d4ed8;
+  --table-odd-row: #f8fafc;
+  --table-even-row: #ffffff;
+  --input-border: #dbe4f0;
+  --input-bg: #ffffff;
+}
+
+.theme-dark {
+  --bg-base: #0b0f19;
+  --bg-surface: #151c2c;
+  --border-color: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent-color: #6366f1;
+  --accent-color-light: rgba(99, 102, 241, 0.12);
+  --selected-tab-bg: rgba(99, 102, 241, 0.12);
+  --selected-tab-color: #818cf8;
+  --table-odd-row: #151c2c;
+  --table-even-row: #0b0f19;
+  --input-border: #334155;
+  --input-bg: #151c2c;
+}
+
+/* ─── Override Dash 4 design tokens per theme ─────────────────────────────── */
+
+:root, .theme-light {
+  --Dash-Fill-Interactive-Strong: #3b82f6;
+  --Dash-Fill-Interactive-Weak: #eff6ff;
+  --Dash-Fill-Inverse-Strong: #ffffff;
+  --Dash-Fill-Disabled: rgba(0, 0, 0, 0.08);
+  --Dash-Shading-Strong: rgba(0, 0, 0, 0.3);
+  --Dash-Shading-Weak: rgba(0, 0, 0, 0.15);
+  --Dash-Stroke-Strong: #dbe4f0;
+  --Dash-Stroke-Weak: #e2e8f0;
+  --Dash-Text-Primary: #0f172a;
+  --Dash-Text-Strong: #0f172a;
+  --Dash-Text-Weak: #64748b;
+  --Dash-Text-Disabled: #94a3b8;
+}
+
+.theme-dark {
+  --Dash-Fill-Interactive-Strong: #6366f1;
+  --Dash-Fill-Interactive-Weak: rgba(99, 102, 241, 0.15);
+  --Dash-Fill-Inverse-Strong: #151c2c;
+  --Dash-Fill-Disabled: rgba(255, 255, 255, 0.08);
+  --Dash-Shading-Strong: rgba(0, 0, 0, 0.6);
+  --Dash-Shading-Weak: rgba(0, 0, 0, 0.4);
+  --Dash-Stroke-Strong: #334155;
+  --Dash-Stroke-Weak: #1e293b;
+  --Dash-Text-Primary: #f8fafc;
+  --Dash-Text-Strong: #f8fafc;
+  --Dash-Text-Weak: #94a3b8;
+  --Dash-Text-Disabled: #475569;
+}
+
+
+.dash-dropdown-trigger {
+  background-color: var(--input-bg) !important;
+  border: 1.5px solid var(--input-border) !important;
   border-radius: 8px !important;
-  border: 1.5px solid #dbe4f0 !important;
-  background-color: #ffffff !important;
+  color: var(--text-primary) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.88rem !important;
   min-height: 40px !important;
-  box-shadow: none !important;
+  transition: border-color 0.18s ease !important;
+}
+
+.dash-dropdown-trigger:hover {
+  border-color: var(--text-secondary) !important;
+}
+
+/* Dropdown wrapper (outer shell) */
+.dash-dropdown {
+  color: var(--text-primary) !important;
   font-family: 'Inter', sans-serif !important;
-  font-size: 0.88rem !important;
-  cursor: pointer !important;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
 }
 
-.Select-control:hover {
-  border-color: #94a3b8 !important;
-}
-
-.is-focused .Select-control,
-.is-focused:not(.is-open) .Select-control {
-  border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.15) !important;
-}
-
-/* Placeholder */
-.Select-placeholder,
-.Select--single > .Select-control .Select-value {
-  color: #64748b !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 0.88rem !important;
-  line-height: 40px !important;
-  padding-left: 10px !important;
-}
-
-/* Selected value text */
-.Select-value-label {
-  color: #0f172a !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 0.88rem !important;
-}
-
-/* Arrow */
-.Select-arrow-zone {
-  padding-right: 8px !important;
-}
-
-.Select-arrow {
-  border-color: #64748b transparent transparent !important;
-}
-
-.is-open .Select-arrow {
-  border-color: transparent transparent #64748b !important;
-}
-
-/* Dropdown menu */
-.Select-menu-outer {
-  border: 1.5px solid #dbe4f0 !important;
+/* Dropdown overlay / content panel */
+.dash-dropdown-content {
+  background-color: var(--input-bg) !important;
+  border: 1.5px solid var(--input-border) !important;
   border-radius: 8px !important;
-  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 4px 10px -5px rgba(0,0,0,0.06) !important;
-  overflow: hidden !important;
+  box-shadow: 0 10px 25px -5px var(--Dash-Shading-Strong) !important;
   font-family: 'Inter', sans-serif !important;
   font-size: 0.88rem !important;
-  z-index: 9999 !important;
-  margin-top: 4px !important;
 }
 
-/* Individual options */
-.Select-option {
-  padding: 9px 12px !important;
-  color: #0f172a !important;
-  background-color: #ffffff !important;
+/* Individual dropdown options */
+.dash-dropdown-option {
+  color: var(--text-primary) !important;
+  background-color: var(--input-bg) !important;
   font-size: 0.88rem !important;
-  cursor: pointer !important;
-  transition: background-color 0.12s ease !important;
+  font-family: 'Inter', sans-serif !important;
+  padding: 9px 12px !important;
 }
 
-.Select-option:hover,
-.Select-option.is-focused {
-  background-color: #eff6ff !important;
-  color: #1d4ed8 !important;
+.dash-dropdown-option:hover,
+.dash-dropdown-option:focus {
+  background-color: var(--selected-tab-bg) !important;
+  color: var(--selected-tab-color) !important;
 }
 
-.Select-option.is-selected {
-  background-color: #dbeafe !important;
-  color: #1d4ed8 !important;
+.dash-dropdown-option[aria-selected="true"] {
+  background-color: var(--selected-tab-bg) !important;
+  color: var(--selected-tab-color) !important;
   font-weight: 600 !important;
 }
 
 /* Search input inside dropdown */
-.Select-input > input {
+.dash-dropdown-search {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--input-border) !important;
+  border-radius: 4px !important;
   font-family: 'Inter', sans-serif !important;
   font-size: 0.88rem !important;
-  color: #0f172a !important;
+}
+
+/* Selected value text */
+.dash-dropdown-value {
+  color: var(--text-primary) !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.dash-dropdown-placeholder {
+  color: var(--text-secondary) !important;
+}
+
+/* Selected item "pills" in multi-select */
+.dash-dropdown-value-item {
+  background-color: var(--selected-tab-bg) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 6px !important;
+  color: var(--selected-tab-color) !important;
+  font-size: 0.82rem !important;
+  font-weight: 500 !important;
+  font-family: 'Inter', sans-serif !important;
+  padding: 2px 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+/* Clear and chevron icons */
+.dash-dropdown-clear,
+.dash-dropdown-trigger-icon {
+  color: var(--text-secondary) !important;
+}
+
+.dash-dropdown-clear:hover {
+  color: var(--accent-color) !important;
+}
+
+/* Action buttons inside dropdown (select all / clear) */
+.dash-dropdown-action-button {
+  color: var(--accent-color) !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+
+input[type="text"],
+input[type="number"],
+input[type="date"] {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border: 1.5px solid var(--input-border) !important;
+  border-radius: 8px !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+input[type="text"]::placeholder,
+input[type="number"]::placeholder {
+  color: var(--text-secondary) !important;
+}
+
+/* ─── Sidebar navigation buttons ─────────────────────────────────────────── */
+
+#sidebar-hide-btn:hover {
+  background-color: var(--accent-color-light) !important;
+  color: var(--selected-tab-color) !important;
+}
+
+#sidebar-show-btn:hover {
+  background-color: var(--accent-color-light) !important;
+  color: var(--selected-tab-color) !important;
+  border-color: var(--accent-color) !important;
 }
 
 #sidebar-hide-btn:hover {

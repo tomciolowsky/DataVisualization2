@@ -55,7 +55,7 @@ except FileNotFoundError:
 GENRE_OPTIONS = sorted(list(PRECOMPUTED.keys()))
 
 
-def _build_treemap(genre_data, selected_genre):
+def _build_treemap(genre_data, selected_genre, theme="light"):
     treemap = genre_data.get('treemap', {})
     if not treemap or not treemap.get('Tag_List'):
         return go.Figure()
@@ -70,6 +70,22 @@ def _build_treemap(genre_data, selected_genre):
     offset = (max_income - min_income) * 0.01 if max_income > min_income else 100
     root_value = min_income - offset
     
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
+    
+    if is_dark:
+        color_continuous_scale = [
+            [0.0, '#151c2c'], 
+            [0.01, '#1e293b'], 
+            [1.0, BLUE]
+        ]
+    else:
+        color_continuous_scale = [
+            [0.0, 'white'], 
+            [0.01, '#E5E7EB'], 
+            [1.0, BLUE]
+        ]
+
     fig = px.treemap(
         df,
         path=['Tag_List'],
@@ -77,11 +93,7 @@ def _build_treemap(genre_data, selected_genre):
         color='Estimated_Income_Median',
         
         # 2. THE SCALE: 0.0 is White. 0.01 starts your Gray and sweeps up to Blue.
-        color_continuous_scale=[
-            [0.0, 'white'], 
-            [0.01, '#E5E7EB'], 
-            [1.0, BLUE] # Assuming BLUE is defined globally in your script
-        ],
+        color_continuous_scale=color_continuous_scale,
         # Lock the colorbar engine to our new extended range
         range_color=[root_value, max_income],
         labels={'Estimated_Income_Median': 'Median of<br>Estimated Income'},
@@ -99,17 +111,18 @@ def _build_treemap(genre_data, selected_genre):
         hovertemplate="<b>Tag: %{label}</b><br>Total Games: %{value:,}<br>Median Income: $%{color:,.0f}<extra></extra>",
         pathbar=dict(visible=False),
         tiling=dict(pad=0), 
-        marker=dict(line=dict(color="white", width=3)),
+        marker=dict(line=dict(color="#151c2c" if is_dark else "white", width=3)),
         textfont=dict(family="Inter, sans-serif", size=14),
         hoverlabel=dict(bgcolor="rgba(17, 24, 39, 0.95)", font_size=13, font_family="Inter, sans-serif", font_color="white")
     )
     
     fig.update_layout(
-        title=dict(text=f"<b>Market Opportunity Analysis: Tag Frequency & Median Earnings ({selected_genre})</b>", x=0.02, xanchor="left"),
+        title=dict(text=f"<b>Market Opportunity Analysis: Tag Frequency & Median Earnings ({selected_genre})</b>", x=0.02, xanchor="left", font=dict(color=font_color)),
         margin=dict(l=0, r=0, t=52, b=70),
-        font=dict(family="Inter, sans-serif", color=TEXT_PRIMARY),
-        paper_bgcolor=BG_SURFACE, 
-        plot_bgcolor=BG_SURFACE, 
+        font=dict(family="Inter, sans-serif", color=font_color),
+        paper_bgcolor="rgba(0,0,0,0)", 
+        plot_bgcolor="rgba(0,0,0,0)", 
+        template="plotly_dark" if is_dark else "plotly_white",
         
         coloraxis_colorbar=dict(
             title="",
@@ -126,7 +139,8 @@ def _build_treemap(genre_data, selected_genre):
     )
     return fig
 
-def _build_heatmap(genre_data, selected_genre):
+
+def _build_heatmap(genre_data, selected_genre, theme="light"):
     heatmap = genre_data.get('heatmap', {})
     tags = heatmap.get('tags', [])
     matrix = heatmap.get('matrix', [])
@@ -146,20 +160,25 @@ def _build_heatmap(genre_data, selected_genre):
         hovertemplate="Primary Tag: %{x}<br>Secondary Tag: %{y}<br>Average Positive Reviews: %{z:.1f}%<extra></extra>"
     )
     
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
+
     fig.update_layout(
-        title=dict(text=f"<b>Genre Co-occurrence & Player Satisfaction Matrix ({selected_genre})</b>", x=0.02, xanchor="left"),
+        title=dict(text=f"<b>Genre Co-occurrence & Player Satisfaction Matrix ({selected_genre})</b>", x=0.02, xanchor="left", font=dict(color=font_color)),
         xaxis_tickangle=-45, 
         xaxis_title="", 
         yaxis_title="", 
         margin=dict(l=50, r=20, t=52, b=50),
-        font=dict(family="Inter, sans-serif", color=TEXT_PRIMARY),
+        font=dict(family="Inter, sans-serif", color=font_color),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        template="plotly_dark" if is_dark else "plotly_white",
     )
     
     return fig
 
-def _build_violins(violins_data, selected_genre):
+
+def _build_violins(violins_data, selected_genre, theme="light"):
     global_order = violins_data.get("global_order", [])
     income_order = violins_data.get("income_order", [])
     playtime_data = violins_data.get("playtime_data", [])
@@ -229,14 +248,18 @@ def _build_violins(violins_data, selected_genre):
                     font=dict(family="Inter, sans-serif", size=13, color="white")
                 )
 
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
+
     fig_playtime.update_layout(
-        title=dict(text=f"<b>Player Engagement & Playtime Distribution by Pricing Tier ({selected_genre})</b>", x=0.02, xanchor="left"),
+        title=dict(text=f"<b>Player Engagement & Playtime Distribution by Pricing Tier ({selected_genre})</b>", x=0.02, xanchor="left", font=dict(color=font_color)),
         showlegend=False, 
         margin=dict(l=50, r=20, t=52, b=50),
-        font=dict(family="Inter, sans-serif", color=TEXT_PRIMARY),
+        font=dict(family="Inter, sans-serif", color=font_color),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         hovermode="closest",
+        template="plotly_dark" if is_dark else "plotly_white",
     )
     fig_playtime.update_xaxes(showspikes=False)
     fig_playtime.update_yaxes(showspikes=False)
@@ -308,21 +331,23 @@ def _build_violins(violins_data, selected_genre):
                 )
 
     fig_income.update_layout(
-        title=dict(text=f"<b>Revenue Performance and Distribution Analysis by Pricing Tier ({selected_genre})</b>", x=0.02, xanchor="left"),
+        title=dict(text=f"<b>Revenue Performance and Distribution Analysis by Pricing Tier ({selected_genre})</b>", x=0.02, xanchor="left", font=dict(color=font_color)),
         showlegend=False, 
         margin=dict(l=50, r=20, t=52, b=50),
         yaxis=dict(tickformat="$,", tickvals=[5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000]),
-        font=dict(family="Inter, sans-serif", color=TEXT_PRIMARY),
+        font=dict(family="Inter, sans-serif", color=font_color),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         hovermode="closest",
+        template="plotly_dark" if is_dark else "plotly_white",
     )
     fig_income.update_xaxes(showspikes=False)
     fig_income.update_yaxes(showspikes=False)
 
     return fig_playtime, fig_income
 
-def _build_radar(radar_data, selected_genre):
+
+def _build_radar(radar_data, selected_genre, theme="light"):
     radar_metrics = ['Price', 'Positive_Pct', 'DLC count', 'Achievements', 'Average playtime forever']
     metrics_closed = radar_metrics + [radar_metrics[0]]
     
@@ -356,16 +381,20 @@ def _build_radar(radar_data, selected_genre):
         line=dict(color=COLOR_INCOME)
     ), row=2, col=1)
 
+    is_dark = theme == "dark"
+    font_color = "#f8fafc" if is_dark else "#0f172a"
+
     fig.update_layout(
         polar1=dict(radialaxis=dict(visible=True, range=[0, 100], ticksuffix="%", angle=45)),
         polar2=dict(radialaxis=dict(visible=True, range=[0, 100], ticksuffix="%", angle=45)),
-        title=dict(text=f"<b>Competitive Performance Benchmarking: Baseline vs. Market Leaders ({selected_genre})</b>", x=0.02, xanchor="left"),
+        title=dict(text=f"<b>Competitive Performance Benchmarking: Baseline vs. Market Leaders ({selected_genre})</b>", x=0.02, xanchor="left", font=dict(color=font_color)),
         showlegend=True, 
         legend=dict(yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
         margin=dict(l=50, r=20, t=52, b=50),
-        font=dict(family="Inter, sans-serif", color=TEXT_PRIMARY),
+        font=dict(family="Inter, sans-serif", color=font_color),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        template="plotly_dark" if is_dark else "plotly_white",
     )
     return fig
 
@@ -434,17 +463,18 @@ def register_callbacks(app):
         Output("insights-playtime-violin-graph", "figure"),
         Output("insights-income-violin-graph", "figure"),
         Output("insights-radar-subplots-graph", "figure"),
-        Input("insights-global-genre-dropdown", "value")
+        Input("insights-global-genre-dropdown", "value"),
+        Input("theme-store", "data")
     )
-    def update_insights_dashboard(selected_genre):
+    def update_insights_dashboard(selected_genre, theme):
         
         genre_data = PRECOMPUTED.get(selected_genre, {})
         violins_data = genre_data.get("violins", {})
         radar_data = genre_data.get("radar", {})
         
-        fig_treemap = _build_treemap(genre_data, selected_genre)
-        fig_heatmap = _build_heatmap(genre_data, selected_genre)
-        fig_playtime, fig_income = _build_violins(violins_data, selected_genre)
-        fig_radar = _build_radar(radar_data, selected_genre)
+        fig_treemap = _build_treemap(genre_data, selected_genre, theme=theme)
+        fig_heatmap = _build_heatmap(genre_data, selected_genre, theme=theme)
+        fig_playtime, fig_income = _build_violins(violins_data, selected_genre, theme=theme)
+        fig_radar = _build_radar(radar_data, selected_genre, theme=theme)
         
         return fig_treemap, fig_heatmap, fig_playtime, fig_income, fig_radar

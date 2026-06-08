@@ -1,4 +1,4 @@
-from dash import Dash, Input, Output, State, ctx, dcc, html
+from dash import Dash, Input, Output, State, ctx, dcc, html, ClientsideFunction
 
 from styles import (
     APP_STYLE,
@@ -9,6 +9,7 @@ from styles import (
     TAB_STYLE,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    BG_SURFACE,
 )
 from tabs import about, explore, insights, overview
 
@@ -28,95 +29,115 @@ overview.register_callbacks(app)
 explore.register_callbacks(app)
 insights.register_callbacks(app)
 
-app.layout = html.Div([
-    dcc.Store(id="sidebar-state-store", data={"visible": True}),
-    
-    html.Button(
-        html.I(className="fa-solid fa-bars"),
-        id="sidebar-show-btn",
-        n_clicks=0,
-        style={
-            "position": "fixed",
-            "left": "16px",
-            "top": "32px",
-            "zIndex": 1100,
-            "display": "none",
-            "alignItems": "center",
-            "justifyContent": "center",
-            "width": "40px",
-            "height": "40px",
-            "borderRadius": "8px",
-            "backgroundColor": "#ffffff",
-            "border": f"1px solid {BORDER_COLOR}",
-            "cursor": "pointer",
-            "boxShadow": "0 2px 8px rgba(0,0,0,0.08)",
-            "color": TEXT_PRIMARY,
-            "transition": "all 0.2s"
-        }
-    ),
+app.layout = html.Div(
+    id="app-wrapper",
+    className="theme-light",
+    children=[
+        dcc.Store(id="theme-store", data="light"),
+        dcc.Store(id="sidebar-state-store", data={"visible": True}),
+        
+        html.Button(
+            html.I(className="fa-solid fa-bars"),
+            id="sidebar-show-btn",
+            n_clicks=0,
+            style={
+                "position": "fixed",
+                "left": "16px",
+                "top": "32px",
+                "zIndex": 1100,
+                "display": "none",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "width": "40px",
+                "height": "40px",
+                "borderRadius": "8px",
+                "backgroundColor": BG_SURFACE,
+                "border": f"1px solid {BORDER_COLOR}",
+                "cursor": "pointer",
+                "boxShadow": "0 2px 8px rgba(0,0,0,0.08)",
+                "color": TEXT_PRIMARY,
+                "transition": "all 0.2s"
+            }
+        ),
 
-    html.Div([
         html.Div([
             html.Div([
-                html.Img(
-                    src='/assets/pp_znak_konturowy_RGB.png', 
-                    style={'width': '32px', 'height': 'auto', 'marginRight': '12px'}
-                ),
                 html.Div([
-                    html.Div("Game Market", style={'fontWeight': '600', 'fontSize': '1.1rem', 'color': TEXT_PRIMARY}),
-                    html.Div("Analyzer", style={'fontWeight': '400', 'fontSize': '0.85rem', 'color': TEXT_SECONDARY})
-                ], style={'lineHeight': '1.2'})
-            ], style={'display': 'flex', 'alignItems': 'center'}),
+                    html.Img(
+                        src='/assets/pp_znak_konturowy_RGB.png', 
+                        style={'width': '32px', 'height': 'auto', 'marginRight': '12px'}
+                    ),
+                    html.Div([
+                        html.Div("Game Market", style={'fontWeight': '600', 'fontSize': '1.1rem', 'color': TEXT_PRIMARY}),
+                        html.Div("Analyzer", style={'fontWeight': '400', 'fontSize': '0.85rem', 'color': TEXT_SECONDARY})
+                    ], style={'lineHeight': '1.2'})
+                ], style={'display': 'flex', 'alignItems': 'center'}),
+                
+                html.Button(
+                    html.I(className="fa-solid fa-chevron-left"),
+                    id="sidebar-hide-btn",
+                    n_clicks=0,
+                    style={
+                        "border": "none",
+                        "backgroundColor": "transparent",
+                        "color": TEXT_SECONDARY,
+                        "cursor": "pointer",
+                        "fontSize": "1.1rem",
+                        "padding": "8px",
+                        "borderRadius": "6px",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "justifyContent": "center",
+                        "transition": "all 0.2s"
+                    }
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '2.5rem', 'padding': '0 16px 0 24px'}),
             
-            html.Button(
-                html.I(className="fa-solid fa-chevron-left"),
-                id="sidebar-hide-btn",
-                n_clicks=0,
-                style={
-                    "border": "none",
-                    "backgroundColor": "transparent",
-                    "color": TEXT_SECONDARY,
-                    "cursor": "pointer",
-                    "fontSize": "1.1rem",
-                    "padding": "8px",
-                    "borderRadius": "6px",
-                    "display": "flex",
-                    "alignItems": "center",
-                    "justifyContent": "center",
-                    "transition": "all 0.2s"
-                }
-            )
-        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '2.5rem', 'padding': '0 16px 0 24px'}),
-        
-        dcc.Tabs(
-            id='sidebar-tabs', 
-            value='tab-summary', 
-            vertical=True,
-            parent_style={"width": "100%", "display": "flex", "flexDirection": "column"},
-            style={'border': 'none', 'borderBottom': 'none'},
-            colors={"border": "transparent", "primary": "transparent", "background": "transparent"},
-            children=[
-                dcc.Tab(id='sidebar-overview-tab', label=html.Div([html.I(className="fa-solid fa-layer-group", style={"width": "20px"}), html.Span("Overview")]), value='tab-summary', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
-                dcc.Tab(id='sidebar-explore-tab', label=html.Div([html.I(className="fa-solid fa-compass", style={"width": "20px"}), html.Span("Explore")]), value='tab-explore', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
-                dcc.Tab(id='sidebar-insights-tab', label=html.Div([html.I(className="fa-solid fa-lightbulb", style={"width": "20px"}), html.Span("Insights")]), value='tab-insights', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
-                dcc.Tab(id='sidebar-about-tab', label=html.Div([html.I(className="fa-solid fa-circle-info", style={"width": "20px"}), html.Span("About")]), value='tab-about', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
-            ]
-        ),
-        html.Div([
-            html.Button([
-                html.I(className="fa-solid fa-route", style={"marginRight": "8px"}),
-                "Start Tour"
-            ], id="start-tour-btn", n_clicks=0, style={
-                "marginTop": "auto", "width": "100%", "padding": "12px", "borderRadius": "8px",
-                "backgroundColor": "#3b82f6", "color": "white", "border": "none", "cursor": "pointer",
-                "fontWeight": "600", "fontSize": "0.95rem"
-            })
-        ], style={"marginTop": "auto", "padding": "0 24px"}),
-        html.Div(id="tour-dummy-output", style={"display": "none"})
-    ], id="sidebar-container", style=SIDEBAR_STYLE),
+            dcc.Tabs(
+                id='sidebar-tabs', 
+                value='tab-summary', 
+                vertical=True,
+                parent_style={"width": "100%", "display": "flex", "flexDirection": "column"},
+                style={'border': 'none', 'borderBottom': 'none'},
+                colors={"border": "transparent", "primary": "transparent", "background": "transparent"},
+                children=[
+                    dcc.Tab(id='sidebar-overview-tab', label=html.Div([html.I(className="fa-solid fa-layer-group", style={"width": "20px"}), html.Span("Overview")]), value='tab-summary', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
+                    dcc.Tab(id='sidebar-explore-tab', label=html.Div([html.I(className="fa-solid fa-compass", style={"width": "20px"}), html.Span("Explore")]), value='tab-explore', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
+                    dcc.Tab(id='sidebar-insights-tab', label=html.Div([html.I(className="fa-solid fa-lightbulb", style={"width": "20px"}), html.Span("Insights")]), value='tab-insights', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
+                    dcc.Tab(id='sidebar-about-tab', label=html.Div([html.I(className="fa-solid fa-circle-info", style={"width": "20px"}), html.Span("About")]), value='tab-about', style=TAB_STYLE, selected_style=SELECTED_TAB_STYLE),
+                ]
+            ),
+            html.Div([
+                html.Div([
+                    html.Button([
+                        html.I(className="fa-solid fa-route", style={"marginRight": "8px"}),
+                        "Start Tour"
+                    ], id="start-tour-btn", n_clicks=0, style={
+                        "flex": "1", "padding": "12px", "borderRadius": "8px",
+                        "backgroundColor": "#3b82f6", "color": "white", "border": "none", "cursor": "pointer",
+                        "fontWeight": "600", "fontSize": "0.95rem"
+                    }),
+                    html.Button(
+                        html.I(id="theme-toggle-icon", className="fa-solid fa-moon"),
+                        id="theme-toggle-btn",
+                        n_clicks=0,
+                        style={
+                            "width": "44px", "height": "44px", "borderRadius": "8px",
+                            "backgroundColor": BG_SURFACE, "color": TEXT_PRIMARY,
+                            "border": f"1px solid {BORDER_COLOR}", "cursor": "pointer",
+                            "display": "flex", "alignItems": "center", "justifyContent": "center",
+                            "fontSize": "1.1rem"
+                        }
+                    )
+                ], style={"display": "flex", "gap": "8px", "width": "100%"})
+            ], style={"marginTop": "auto", "padding": "0 24px"}),
+            html.Div(id="tour-dummy-output", style={"display": "none"})
+        ], id="sidebar-container", style=SIDEBAR_STYLE),
 
-    html.Div(id='tab-content', style=CONTENT_STYLE)
-], style=APP_STYLE)
+        html.Div(id='tab-content', style=CONTENT_STYLE)
+    ],
+    style=APP_STYLE
+)
 
 app.clientside_callback(
     """
@@ -130,6 +151,30 @@ app.clientside_callback(
     Output("tour-dummy-output", "children"),
     Input("start-tour-btn", "n_clicks")
 )
+
+@app.callback(
+    Output("theme-store", "data"),
+    Output("theme-toggle-icon", "className"),
+    Input("theme-toggle-btn", "n_clicks"),
+    State("theme-store", "data"),
+    prevent_initial_call=True
+)
+def toggle_theme(n_clicks, current_theme):
+    if current_theme == "dark":
+        return "light", "fa-solid fa-moon"
+    else:
+        return "dark", "fa-solid fa-sun"
+
+
+app.clientside_callback(
+    ClientsideFunction(
+        namespace="clientside",
+        function_name="update_theme"
+    ),
+    Output("app-wrapper", "className"),
+    Input("theme-store", "data")
+)
+
 
 @app.callback(
     Output('tab-content', 'children'),
@@ -182,7 +227,7 @@ def toggle_sidebar(hide_clicks, show_clicks, tour_clicks, state_data):
             "width": "40px",
             "height": "40px",
             "borderRadius": "8px",
-            "backgroundColor": "#ffffff",
+            "backgroundColor": BG_SURFACE,
             "border": f"1px solid {BORDER_COLOR}",
             "cursor": "pointer",
             "boxShadow": "0 2px 8px rgba(0,0,0,0.08)",
@@ -203,7 +248,7 @@ def toggle_sidebar(hide_clicks, show_clicks, tour_clicks, state_data):
             "width": "40px",
             "height": "40px",
             "borderRadius": "8px",
-            "backgroundColor": "#ffffff",
+            "backgroundColor": BG_SURFACE,
             "border": f"1px solid {BORDER_COLOR}",
             "cursor": "pointer",
             "boxShadow": "0 2px 8px rgba(0,0,0,0.08)",
@@ -214,4 +259,9 @@ def toggle_sidebar(hide_clicks, show_clicks, tour_clicks, state_data):
     return sidebar_style, content_style, show_btn_style, state_data
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8050))
+    debug = os.environ.get("DEBUG", "False").lower() in ("true", "1", "yes")
+    app.run(host=host, port=port, debug=debug)
+

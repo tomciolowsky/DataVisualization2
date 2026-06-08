@@ -46,22 +46,67 @@ def main():
     
 
     explore_df = df.copy()
-    bounds = explore_df["Estimated owners"].fillna("").astype(str).str.extract(r"(?P<lower>\d+)\s*-\s*(?P<upper>\d+)")
-    explore_df["Owners lower"] = pd.to_numeric(bounds["lower"], errors="coerce")
-    explore_df["Owners upper"] = pd.to_numeric(bounds["upper"], errors="coerce")
+    
+    is_win = explore_df["Windows"].fillna(False).astype(bool)
+    is_mac = explore_df["Mac"].fillna(False).astype(bool)
+    is_lin = explore_df["Linux"].fillna(False).astype(bool)
+    
+    def get_platforms(w, m, l):
+        parts = []
+        if w: parts.append("Windows")
+        if m: parts.append("Mac")
+        if l: parts.append("Linux")
+        return ", ".join(parts)
+        
+    explore_df["Platforms"] = [get_platforms(w, m, l) for w, m, l in zip(is_win, is_mac, is_lin)]
+    
+    explore_df["DLC Count"] = explore_df["DLC count"]
+    explore_df["Metacritic Score"] = explore_df["Metacritic score"]
+    explore_df["Positive percentage"] = explore_df["Positive_Pct"].fillna(0).astype(float)
+    explore_df["Negative percentage"] = 100.0 - explore_df["Positive percentage"]
     explore_df["Income"] = explore_df.get("Estimated_Income", 0)
-    explore_df["Positive ratings"] = explore_df.get("Positive_Pct", 0)
-    explore_df["Negative ratings"] = explore_df.get("Negative_Pct", 0)
-    
-    def tokenize(value):
-        if not value: return []
-        return [part.strip().lower() for part in str(value).split(",") if part.strip()]
-    
-    explore_df["_genres_tokens"] = explore_df["Genres"].fillna("").apply(tokenize)
-    explore_df["_categories_tokens"] = explore_df["Categories"].fillna("").apply(tokenize)
-    explore_df["_tags_tokens"] = explore_df["Tags"].fillna("").apply(tokenize)
-    
-    explore_df.to_parquet(PRECOMP_DIR / "explore_optimized.parquet")
+
+    import ast
+    def clean_list_literal(val):
+        if not val or pd.isna(val):
+            return ""
+        val_str = str(val).strip()
+        if not val_str:
+            return ""
+        if val_str.startswith("[") and val_str.endswith("]"):
+            try:
+                parsed = ast.literal_eval(val_str)
+                if isinstance(parsed, list):
+                    return ", ".join(parsed)
+            except Exception:
+                pass
+        return val_str
+
+    explore_df["Supported languages"] = explore_df["Supported languages"].apply(clean_list_literal)
+    explore_df["Full audio languages"] = explore_df["Full audio languages"].apply(clean_list_literal)
+
+    # Precompute filter dropdown options to avoid runtime parsing overhead
+    def _multi_options(values: pd.Series) -> list[dict[str, str]]:
+        unique = sorted({str(v).strip() for v in values.dropna() if str(v).strip()})
+        return [{"label": v, "value": v.lower()} for v in unique]
+        
+    explore_options = {
+        "genres": _multi_options(explore_df["Genres"].dropna().astype(str).str.split(",").explode()),
+        "categories": _multi_options(explore_df["Categories"].dropna().astype(str).str.split(",").explode()),
+        "tags": _multi_options(explore_df["Tags"].dropna().astype(str).str.split(",").explode())
+    }
+    with open(PRECOMP_DIR / "explore_options.json", "w") as f:
+        json.dump(explore_options, f)
+
+    cols_to_keep = [
+        "Name", "Release date", "Estimated owners", "Peak CCU", "Required age",
+        "Price", "Discount", "DLC Count", "Supported languages", "Full audio languages",
+        "User score", "Metacritic Score", "Achievements", "Categories", "Genres", "Tags",
+        "Positive percentage", "Negative percentage", "Platforms", "Income",
+        "mds_x", "mds_y", "mds_cosine_x", "mds_cosine_y"
+    ]
+    explore_df_clean = explore_df[cols_to_keep]
+    explore_df_clean.to_parquet(PRECOMP_DIR / "explore_optimized.parquet")
 
 
     overview_df = df.copy()
@@ -89,7 +134,6 @@ def main():
     for period in ["month", "quarter", "year"]:
         freq = _period_frequency(period)
         
-        # Total
         total_p = overview_df.copy()
         total_p["Release date"] = total_p["Release date"].dt.to_period(freq).dt.to_timestamp()
         
